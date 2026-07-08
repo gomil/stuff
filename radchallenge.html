@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RadChallenge-Kalender</title>
+<style>
+  :root{
+    --paper:#f6f3ea;
+    --paper-dim:#efebdd;
+    --ink:#22262b;
+    --ink-soft:#5b6167;
+    --asphalt:#2e3238;
+    --asphalt-2:#3a3f46;
+    --route-green:#1f6f4d;
+    --route-green-dark:#154f37;
+    --lane-yellow:#e8b93b;
+    --green-strong:#2f9e5b;
+    --green-light:#d9f2e3;
+    --red-strong:#d8464a;
+    --red-light:#f8dcdc;
+    --purple-strong:#7c3aed;
+    --tier-yellow:#e8b93b;
+    --tier-orange:#e8823b;
+    --tier-red:#d8464a;
+    --tier-green:#2f9e5b;
+    --border:#d9d2bf;
+    --font-display: 'Arial Narrow', 'Helvetica Neue Condensed', 'Segoe UI Condensed', sans-serif;
+    --font-body: system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+    --font-mono: ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    padding:24px 20px 60px;
+  }
+  .wrap{max-width:1180px;margin:0 auto;}
+
+  /* ---------- Header / signage title ---------- */
+  header.title-block{
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    margin-bottom:22px;
+  }
+  .sign{
+    background:var(--route-green);
+    color:#fff;
+    border:3px solid #fff;
+    outline:2px solid var(--route-green-dark);
+    border-radius:8px;
+    padding:10px 18px;
+    font-family:var(--font-display);
+    text-transform:uppercase;
+    letter-spacing:1.5px;
+    font-weight:800;
+    font-size:26px;
+    box-shadow:0 3px 0 var(--route-green-dark);
+  }
+  .subtitle{color:var(--ink-soft);font-size:14px;max-width:420px;}
+
+  /* ---------- Streckenprofil (signature element) ---------- */
+  .route-track{
+    position:relative;
+    height:58px;
+    border-radius:29px;
+    margin:8px 0 26px;
+    background:
+      linear-gradient(var(--asphalt),var(--asphalt)) padding-box,
+      repeating-linear-gradient(90deg, var(--lane-yellow) 0 26px, transparent 26px 52px) center/100% 4px no-repeat;
+    background-color:var(--asphalt);
+    box-shadow:inset 0 0 0 2px var(--asphalt-2), 0 2px 6px rgba(0,0,0,.25);
+    overflow:visible;
+  }
+  .route-track::before{
+    content:"";position:absolute;inset:0;border-radius:29px;
+    background:repeating-linear-gradient(90deg, var(--lane-yellow) 0 26px, transparent 26px 52px);
+    background-size:52px 4px;background-repeat:repeat-x;background-position:center;
+    height:4px;top:50%;transform:translateY(-50%);
+  }
+  .route-marker{
+    position:absolute;top:50%;transform:translate(-50%,-50%) scaleX(-1);
+    font-size:30px;transition:left .4s ease;line-height:1;
+    filter:drop-shadow(0 2px 2px rgba(0,0,0,.4));
+  }
+  .route-caption{
+    display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);
+    font-family:var(--font-mono);margin-top:-16px;margin-bottom:24px;flex-wrap:wrap;gap:4px;
+  }
+  .route-caption b{color:var(--ink);font-weight:700;}
+
+  /* ---------- Controls ---------- */
+  .controls{
+    display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end;
+    background:var(--paper-dim);border:1px solid var(--border);border-radius:10px;
+    padding:14px 18px;margin-bottom:22px;
+  }
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft);font-weight:700;}
+  .field input{
+    font-family:var(--font-mono);font-size:16px;padding:6px 10px;
+    border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--ink);
+    width:110px;
+  }
+  .field input:focus,.cell input:focus{outline:2px solid var(--route-green);outline-offset:1px;}
+  .reset-link{
+    margin-left:auto;background:none;border:1px solid var(--red-strong);color:var(--red-strong);
+    border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer;font-family:var(--font-body);
+  }
+  .reset-link:hover{background:var(--red-light);}
+  .io-group{display:flex;gap:8px;}
+  .io-btn{
+    background:var(--route-green);color:#fff;border:none;border-radius:6px;
+    padding:9px 14px;font-size:13px;cursor:pointer;font-family:var(--font-body);font-weight:700;
+    box-shadow:0 2px 0 var(--route-green-dark);
+  }
+  .io-btn:hover{background:var(--route-green-dark);}
+  .io-status{
+    font-size:12px;padding:8px 12px;border-radius:6px;margin:-8px 0 18px;font-family:var(--font-mono);
+  }
+  .io-status.ok{background:var(--green-light);color:var(--route-green-dark);}
+  .io-status.err{background:var(--red-light);color:var(--red-strong);}
+
+
+  /* ---------- Legend ---------- */
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);margin-bottom:18px;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .swatch{width:13px;height:13px;border-radius:3px;display:inline-block;}
+
+  /* ---------- Table ---------- */
+  .table-scroll{overflow-x:auto;border-radius:10px;border:1px solid var(--border);background:#fff;}
+  table{border-collapse:separate;border-spacing:0;width:100%;min-width:980px;}
+  thead th{
+    position:sticky;top:0;z-index:2;background:#fff;padding:8px 4px 0;
+  }
+  th.day-col-head, td.day-col{
+    width:44px;text-align:center;font-family:var(--font-mono);font-size:12px;color:var(--ink-soft);
+    background:var(--paper-dim);border-right:1px solid var(--border);border-bottom:1px solid var(--border);
+    position:sticky;left:0;z-index:1;
+  }
+  th.day-col-head{z-index:3;}
+  .month-sign{
+    background:var(--route-green);color:#fff;border:2px solid #fff;outline:1px solid var(--route-green-dark);
+    border-radius:7px 7px 0 0;font-family:var(--font-display);text-transform:uppercase;
+    letter-spacing:1px;font-weight:800;font-size:13px;padding:7px 2px;display:block;text-align:center;
+  }
+  td.cell{
+    padding:0;border-right:1px solid var(--border);border-bottom:1px solid var(--border);
+    min-width:70px;
+  }
+  td.na{background:repeating-linear-gradient(135deg, #f1eee4 0 6px, #e7e2d3 6px 12px);}
+  .cell input{
+    width:100%;height:34px;border:none;background:transparent;text-align:center;
+    font-family:var(--font-mono);font-size:13px;color:inherit;padding:0 2px;
+    font-variant-numeric:tabular-nums;
+  }
+  .cell input::placeholder{color:inherit;opacity:.55;}
+  .cell input::-webkit-outer-spin-button,
+  .cell input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  .cell input[type=number]{-moz-appearance:textfield;appearance:textfield;}
+  .cell-green-strong{background:var(--green-strong);color:#fff;}
+  .cell-green-light{background:var(--green-light);color:var(--ink);}
+  .cell-red-strong{background:var(--red-strong);color:#fff;}
+  .cell-red-light{background:var(--red-light);color:var(--ink);}
+  .cell-purple{background:var(--purple-strong);color:#fff;}
+  .is-today{box-shadow:inset 0 0 0 3px var(--lane-yellow);}
+
+  tfoot td, tfoot th{
+    border-right:1px solid var(--border);border-top:2px solid var(--asphalt);
+    padding:6px 6px;font-size:11px;vertical-align:top;background:var(--paper-dim);
+  }
+  tfoot th{
+    position:sticky;left:0;text-align:left;font-family:var(--font-body);font-weight:700;
+    color:var(--ink-soft);background:var(--paper-dim);
+  }
+  .stat-soll{font-family:var(--font-mono);font-weight:700;color:var(--ink);}
+  .stat-badge{
+    display:inline-block;margin-top:4px;padding:3px 6px;border-radius:5px;font-family:var(--font-mono);
+    font-weight:700;color:#fff;line-height:1.5;
+  }
+  .tier-green{background:var(--tier-green);}
+  .tier-yellow{background:var(--tier-yellow);color:var(--ink);}
+  .tier-orange{background:var(--tier-orange);}
+  .tier-red{background:var(--tier-red);}
+
+  footer.note{margin-top:16px;font-size:12px;color:var(--ink-soft);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="title-block">
+    <div class="sign">🚴 RadChallenge</div>
+    <div class="subtitle">Jahresbasierter Kilometer-Tracker &mdash; kumulierte Kilometerstände eintragen, Soll/Ist per Tag und Monat im Blick behalten.</div>
+  </header>
+
+  <div class="route-track" id="routeTrack" title="Fortschritt: aktueller Kilometerstand im Verhältnis zum Jahresziel">
+    <div class="route-marker" id="routeMarker" style="left:0%;">🚴</div>
+  </div>
+  <div class="route-caption" id="routeCaption"></div>
+
+  <div class="controls">
+    <div class="field">
+      <label for="yearInput">Jahr</label>
+      <input type="number" id="yearInput" step="1">
+    </div>
+    <div class="field">
+      <label for="goalInput">KM-Ziel / Tag</label>
+      <input type="number" id="goalInput" step="0.1" min="0.1">
+    </div>
+    <div class="io-group">
+      <button class="io-btn" id="exportBtn" type="button">⭳ Export</button>
+      <button class="io-btn" id="importBtn" type="button">⭱ Import</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+  </div>
+  <div id="ioStatus" class="io-status" hidden></div>
+
+
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--green-strong)"></i> Ziel erreicht (eingetragen)</span>
+    <span><i class="swatch" style="background:var(--green-light)"></i> Ziel erreicht (fortgeschrieben)</span>
+    <span><i class="swatch" style="background:var(--red-strong)"></i> Rückstand (eingetragen)</span>
+    <span><i class="swatch" style="background:var(--red-light)"></i> Rückstand (fortgeschrieben)</span>
+    <span><i class="swatch" style="background:var(--purple-strong)"></i> Rückläufiger Wert</span>
+    <span><i class="swatch" style="background:#fff;box-shadow:inset 0 0 0 2px var(--lane-yellow)"></i> Heute</span>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr id="headRow">
+          <th class="day-col-head">Tag</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+      <tfoot id="tableFoot"></tfoot>
+    </table>
+  </div>
+
+  <footer class="note">Daten werden automatisch im Browser (localStorage) gespeichert &mdash; getrennt je Jahr.</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var MONTH_NAMES = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+  var todayReal = new Date();
+  var todayISO = fmtISO(todayReal.getFullYear(), todayReal.getMonth()+1, todayReal.getDate());
+
+  var yearInput = document.getElementById('yearInput');
+  var goalInput = document.getElementById('goalInput');
+  var exportBtn = document.getElementById('exportBtn');
+  var importBtn = document.getElementById('importBtn');
+  var importFile = document.getElementById('importFile');
+  var ioStatus  = document.getElementById('ioStatus');
+  var headRow   = document.getElementById('headRow');
+  var tableBody = document.getElementById('tableBody');
+  var tableFoot = document.getElementById('tableFoot');
+  var routeMarker  = document.getElementById('routeMarker');
+  var routeCaption = document.getElementById('routeCaption');
+
+  var state = { year: todayReal.getFullYear(), goal: 10, entries: {} };
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function fmtISO(y,m,d){ return y + '-' + pad(m) + '-' + pad(d); }
+  function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
+  function storageKey(y){ return 'radchallenge:' + y; }
+  function fmt1(n){ return n.toLocaleString('de-DE', {minimumFractionDigits:1, maximumFractionDigits:1}); }
+  function fmtG(n){ return n.toLocaleString('de-DE', {maximumFractionDigits:1}); }
+
+  function loadYear(y){
+    var raw = localStorage.getItem(storageKey(y));
+    if(raw){
+      try{
+        var parsed = JSON.parse(raw);
+        return { goal: (typeof parsed.goal === 'number' && parsed.goal > 0) ? parsed.goal : 10, entries: parsed.entries || {} };
+      }catch(e){ /* fall through to default */ }
+    }
+    return { goal: 10, entries: {} };
+  }
+
+  function saveYear(y, data){
+    localStorage.setItem(storageKey(y), JSON.stringify({ goal: data.goal, entries: data.entries }));
+  }
+
+  function buildHeader(){
+    headRow.innerHTML = '<th class="day-col-head">Tag</th>';
+    for(var m=1;m<=12;m++){
+      var th = document.createElement('th');
+      var span = document.createElement('span');
+      span.className = 'month-sign';
+      span.textContent = MONTH_NAMES[m-1];
+      th.appendChild(span);
+      headRow.appendChild(th);
+    }
+  }
+
+  function computeYearData(year, goal, entries){
+    var dayMap = {};
+    var running = 0;
+    var idx = 0;
+    var monthLastDayInfo = []; // index 1..12 -> dayInfo of last day of month
+    for(var m=1;m<=12;m++){
+      var dim = daysInMonth(year,m);
+      for(var d=1; d<=dim; d++){
+        var iso = fmtISO(year,m,d);
+        var hasExplicit = Object.prototype.hasOwnProperty.call(entries, iso);
+        var decreased = false;
+        if(hasExplicit){
+          var val = parseFloat(entries[iso]);
+          if(!isNaN(val)){
+            decreased = val < running;
+            running = val;
+          }
+        }
+        idx++;
+        var info = { iso: iso, m:m, d:d, idx: idx, IST: running, SOLL: idx*goal, hasExplicit: hasExplicit, decreased: decreased };
+        dayMap[iso] = info;
+        if(d === dim) monthLastDayInfo[m] = info;
+      }
+    }
+    var totalDays = idx;
+
+    // last globally entered date (max ISO date with explicit entry)
+    var entryDates = Object.keys(entries).filter(function(k){ return dayMap[k]; }).sort();
+    var lastEntryISO = entryDates.length ? entryDates[entryDates.length-1] : null;
+    var lastEntryInfo = lastEntryISO ? dayMap[lastEntryISO] : null;
+    var lastEntryIST = lastEntryInfo ? dayMap[lastEntryISO].IST : 0;
+    var lastEntryIdx = lastEntryInfo ? lastEntryInfo.idx : 0;
+
+    return {
+      dayMap: dayMap, totalDays: totalDays, monthLastDayInfo: monthLastDayInfo,
+      lastEntryISO: lastEntryISO, lastEntryIST: lastEntryIST, lastEntryIdx: lastEntryIdx
+    };
+  }
+
+  function renderTable(model, goal, year){
+    tableBody.innerHTML = '';
+    var maxDays = 31;
+    for(var r=1; r<=maxDays; r++){
+      var tr = document.createElement('tr');
+      var thDay = document.createElement('td');
+      thDay.className = 'day-col';
+      thDay.textContent = r;
+      tr.appendChild(thDay);
+
+      for(var m=1; m<=12; m++){
+        var dim = daysInMonth(year,m);
+        var td = document.createElement('td');
+        td.className = 'cell';
+        if(r > dim){
+          td.className = 'cell na';
+          tr.appendChild(td);
+          continue;
+        }
+        var iso = fmtISO(year,m,r);
+        var info = model.dayMap[iso];
+        var colorClass;
+        if(info.decreased){
+          colorClass = 'cell-purple';
+        } else {
+          var behind = info.IST < info.SOLL;
+          if(info.hasExplicit){
+            colorClass = behind ? 'cell-red-strong' : 'cell-green-strong';
+          } else {
+            colorClass = behind ? 'cell-red-light' : 'cell-green-light';
+          }
+        }
+        td.className = 'cell ' + colorClass + (iso === todayISO ? ' is-today' : '');
+
+        var input = document.createElement('input');
+        input.type = 'number';
+        input.step = '0.1';
+        input.min = '0';
+        input.dataset.iso = iso;
+        if(info.hasExplicit){
+          input.value = String(parseFloat(state.entries[iso]));
+        } else if(info.IST > 0){
+          input.placeholder = fmtG(info.IST);
+        }
+        input.title = 'Soll: ' + fmtG(info.SOLL) + ' km · Ist: ' + fmtG(info.IST) + ' km';
+        td.appendChild(input);
+        tr.appendChild(td);
+      }
+      tableBody.appendChild(tr);
+    }
+  }
+
+  function tierColorAhead(avg, goal){
+    // month completed: higher avg is better
+    if(avg > goal) return 'tier-green';
+    if(avg >= goal*0.8) return 'tier-yellow';
+    if(avg >= goal*0.5) return 'tier-orange';
+    return 'tier-red';
+  }
+  function tierColorPace(avg, goal){
+    // month open: needed pace, lower is better
+    if(avg <= goal) return 'tier-green';
+    if(avg <= goal*1.2) return 'tier-yellow';
+    if(avg <= goal*1.5) return 'tier-orange';
+    return 'tier-red';
+  }
+
+  function renderFooter(model, goal, year){
+    tableFoot.innerHTML = '';
+
+    // Row 1: Monats-SOLL
+    var trSoll = document.createElement('tr');
+    var thSoll = document.createElement('th');
+    thSoll.textContent = 'Monats-SOLL';
+    trSoll.appendChild(thSoll);
+
+    // Row 2: Status (erreicht / noch)
+    var trStat = document.createElement('tr');
+    var thStat = document.createElement('th');
+    thStat.textContent = 'Status';
+    trStat.appendChild(thStat);
+
+    for(var m=1; m<=12; m++){
+      var dim = daysInMonth(year,m);
+      var monthSoll = dim * goal;
+
+      var tdSoll = document.createElement('td');
+      tdSoll.innerHTML = '<span class="stat-soll">' + fmtG(monthSoll) + ' km</span>';
+      trSoll.appendChild(tdSoll);
+
+      var lastDayInfo = model.monthLastDayInfo[m];
+      var abgeschlossen = (model.lastEntryISO !== null && model.lastEntryISO >= lastDayInfo.iso) || (lastDayInfo.IST >= lastDayInfo.SOLL);
+
+      var tdStat = document.createElement('td');
+      if(abgeschlossen){
+        var prevLast = (m === 1) ? 0 : model.monthLastDayInfo[m-1].IST;
+        var monatsKM = lastDayInfo.IST - prevLast;
+        var monatsSchnitt = monatsKM / dim;
+        var tier = tierColorAhead(monatsSchnitt, goal);
+        tdStat.innerHTML =
+          'erreicht: <b>' + fmtG(monatsKM) + ' km</b><br>bei ' +
+          '<span class="stat-badge ' + tier + '">' + fmt1(monatsSchnitt) + ' km/Tag</span>';
+      } else {
+        var lastIdxUsed = model.lastEntryIdx; // 0 if none
+        var lastISTUsed = model.lastEntryIST; // 0 if none
+        var langzeitKM = lastDayInfo.SOLL - lastISTUsed;
+        var daysBetween = lastDayInfo.idx - lastIdxUsed;
+        var langzeitSchnitt = daysBetween > 0 ? (langzeitKM / daysBetween) : langzeitKM;
+        var tier2 = tierColorPace(langzeitSchnitt, goal);
+        tdStat.innerHTML =
+          'noch: <b>' + fmtG(langzeitKM) + ' km</b><br>bei ' +
+          '<span class="stat-badge ' + tier2 + '">' + fmt1(langzeitSchnitt) + ' km/Tag</span>';
+      }
+      trStat.appendChild(tdStat);
+    }
+
+    tableFoot.appendChild(trSoll);
+    tableFoot.appendChild(trStat);
+  }
+
+  function renderRoute(model, goal, year){
+    var totalDays = model.totalDays;
+    var totalGoal = totalDays * goal;
+    var pct = totalGoal > 0 ? Math.min(100, Math.max(0, (model.lastEntryIST / totalGoal) * 100)) : 0;
+    routeMarker.style.left = pct + '%';
+    var lastLabel = model.lastEntryISO ? model.lastEntryISO.split('-').reverse().slice(0,2).join('.') + '.' : '–';
+    routeCaption.innerHTML =
+      '<span>Letzter Eintrag: <b>' + lastLabel + '</b> · Stand <b>' + fmtG(model.lastEntryIST) + ' km</b></span>' +
+      '<span>Jahresziel ' + year + ': <b>' + fmtG(totalGoal) + ' km</b> (' + fmtG(goal) + ' km/Tag × ' + totalDays + ' Tage)</span>' +
+      '<span>Fortschritt: <b>' + fmt1(pct) + ' %</b></span>';
+  }
+
+  function render(){
+    var model = computeYearData(state.year, state.goal, state.entries);
+    renderTable(model, state.goal, state.year);
+    renderFooter(model, state.goal, state.year);
+    renderRoute(model, state.goal, state.year);
+  }
+
+  function setYear(y){
+    state.year = y;
+    var data = loadYear(y);
+    state.goal = data.goal;
+    state.entries = data.entries;
+    yearInput.value = y;
+    goalInput.value = state.goal;
+    render();
+  }
+
+  // ---- events ----
+  yearInput.addEventListener('change', function(){
+    var y = parseInt(yearInput.value, 10);
+    if(isNaN(y)) return;
+    setYear(y);
+  });
+
+  goalInput.addEventListener('change', function(){
+    var g = parseFloat(goalInput.value);
+    if(isNaN(g) || g <= 0) g = 10;
+    state.goal = g;
+    goalInput.value = g;
+    saveYear(state.year, state);
+    render();
+  });
+
+  tableBody.addEventListener('change', function(ev){
+    var target = ev.target;
+    if(target.tagName !== 'INPUT') return;
+    var iso = target.dataset.iso;
+    var raw = target.value;
+    if(raw === ''){
+      delete state.entries[iso];
+    } else {
+      var v = parseFloat(raw);
+      if(isNaN(v) || v < 0){ target.value=''; return; }
+      state.entries[iso] = v;
+    }
+    saveYear(state.year, state);
+    render();
+  });
+
+  // ---- Export / Import ----
+  var PREFIX = 'radchallenge:';
+
+  function showStatus(msg, ok){
+    ioStatus.textContent = msg;
+    ioStatus.className = 'io-status ' + (ok ? 'ok' : 'err');
+    ioStatus.hidden = false;
+    clearTimeout(showStatus._t);
+    showStatus._t = setTimeout(function(){ ioStatus.hidden = true; }, 6000);
+  }
+
+  function collectAllYears(){
+    var years = {};
+    for(var i=0; i<localStorage.length; i++){
+      var key = localStorage.key(i);
+      if(key && key.indexOf(PREFIX) === 0){
+        var year = key.slice(PREFIX.length);
+        try{
+          var parsed = JSON.parse(localStorage.getItem(key));
+          years[year] = { goal: parsed.goal, entries: parsed.entries || {} };
+        }catch(e){ /* skip corrupt entry */ }
+      }
+    }
+    return years;
+  }
+
+  exportBtn.addEventListener('click', function(){
+    var years = collectAllYears();
+    if(Object.keys(years).length === 0){
+      showStatus('Keine Daten zum Exportieren vorhanden.', false);
+      return;
+    }
+    var payload = {
+      app: 'RadChallenge-Kalender',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      years: years
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var stamp = fmtISO(todayReal.getFullYear(), todayReal.getMonth()+1, todayReal.getDate());
+    a.href = url;
+    a.download = 'radchallenge-export-' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showStatus('Export erstellt: ' + Object.keys(years).length + ' Jahr(e) gespeichert.', true);
+  });
+
+  importBtn.addEventListener('click', function(){
+    importFile.value = '';
+    importFile.click();
+  });
+
+  importFile.addEventListener('change', function(){
+    var file = importFile.files && importFile.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var data;
+      try{
+        data = JSON.parse(reader.result);
+      }catch(e){
+        showStatus('Import fehlgeschlagen: Datei ist kein gültiges JSON.', false);
+        return;
+      }
+      var years = data && data.years;
+      if(!years || typeof years !== 'object'){
+        showStatus('Import fehlgeschlagen: Unerwartetes Dateiformat.', false);
+        return;
+      }
+      var yearKeys = Object.keys(years).filter(function(y){ return /^\d{4}$/.test(y); });
+      if(yearKeys.length === 0){
+        showStatus('Import fehlgeschlagen: Keine gültigen Jahresdaten gefunden.', false);
+        return;
+      }
+      if(!confirm('Daten für ' + yearKeys.length + ' Jahr(e) (' + yearKeys.join(', ') + ') importieren? Bestehende Einträge dieser Jahre werden überschrieben.')){
+        return;
+      }
+      yearKeys.forEach(function(y){
+        var yd = years[y] || {};
+        var goal = (typeof yd.goal === 'number' && yd.goal > 0) ? yd.goal : 10;
+        var entries = (yd.entries && typeof yd.entries === 'object') ? yd.entries : {};
+        localStorage.setItem(storageKey(y), JSON.stringify({ goal: goal, entries: entries }));
+      });
+      setYear(state.year); // aktuelle Ansicht neu laden, falls betroffen
+      showStatus('Import erfolgreich: ' + yearKeys.join(', ') + ' geladen.', true);
+    };
+    reader.onerror = function(){
+      showStatus('Import fehlgeschlagen: Datei konnte nicht gelesen werden.', false);
+    };
+    reader.readAsText(file);
+  });
+
+  // ---- init ----
+  buildHeader();
+  setYear(state.year);
+
+})();
+</script>
+</body>
+</html>
