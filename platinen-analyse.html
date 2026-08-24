@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Platinen-Analyse</title>
+<style>
+  :root{
+    --bg:#0d1512;
+    --panel:#131f1a;
+    --panel-2:#182620;
+    --line:#25382f;
+    --text:#e7ede9;
+    --muted:#82988a;
+    --copper:#c9884f;
+    --trace:#39d98a;
+    --trace-dim:#1f6b48;
+    --pad:#ffb84d;
+    --error:#ff6b5e;
+    --error-bg:#2a1613;
+    --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 1px 1px, rgba(57,217,138,0.08) 1px, transparent 1px);
+    background-size:22px 22px;
+    background-color:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    min-height:100vh;
+    padding:28px 18px 60px;
+  }
+  .wrap{max-width:1180px;margin:0 auto;}
+  header{margin-bottom:22px;}
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:.14em;
+    color:var(--trace);
+    text-transform:uppercase;
+    margin:0 0 6px;
+  }
+  h1{
+    font-family:var(--mono);
+    font-size:clamp(24px,3.4vw,34px);
+    margin:0 0 8px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  header p{color:var(--muted);max-width:680px;line-height:1.55;margin:0;font-size:14.5px;}
+
+  .tabs{display:flex;gap:2px;margin:26px 0 22px;border-bottom:1px solid var(--line);}
+  .tab{
+    font-family:var(--mono);
+    background:none;border:none;
+    color:var(--muted);
+    padding:11px 18px;
+    font-size:13px;
+    letter-spacing:.03em;
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+    transition:color .15s, border-color .15s;
+  }
+  .tab.active{color:var(--trace);border-bottom-color:var(--trace);}
+  .tab:disabled{color:#4a5951;cursor:not-allowed;}
+  .tab:not(:disabled):not(.active):hover{color:var(--text);}
+
+  .hidden{display:none !important;}
+
+  .panels{display:flex;gap:20px;flex-wrap:wrap;}
+  .side-panel{
+    flex:1 1 380px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px;
+    min-width:320px;
+  }
+  .side-panel h2{
+    font-family:var(--mono);
+    font-size:14px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    margin:0 0 4px;
+    color:var(--text);
+    display:flex;align-items:center;gap:8px;
+  }
+  .side-panel h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--copper);display:inline-block;}
+  .side-panel .hint{color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5;}
+
+  input[type=file]{
+    font-family:var(--sans);
+    font-size:13px;
+    color:var(--muted);
+    width:100%;
+    padding:10px;
+    background:var(--panel-2);
+    border:1px dashed var(--line);
+    border-radius:8px;
+    margin-bottom:12px;
+  }
+  input[type=file]::file-selector-button{
+    font-family:var(--mono);
+    background:var(--trace-dim);
+    color:#eafff2;
+    border:none;
+    padding:7px 12px;
+    border-radius:6px;
+    margin-right:10px;
+    cursor:pointer;
+    font-size:12px;
+  }
+
+  .canvas-wrap{
+    background:
+      repeating-linear-gradient(45deg, #10201a 0 8px, #0d1a15 8px 16px);
+    border:1px solid var(--line);
+    border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    min-height:120px;
+    overflow:hidden;
+    margin-bottom:10px;
+  }
+  canvas{display:block;max-width:100%;touch-action:none;}
+  #app canvas[id$="Orig"]{cursor:crosshair;}
+
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  button.btn{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:.03em;
+    background:var(--panel-2);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:9px 13px;
+    cursor:pointer;
+    transition:border-color .15s, background .15s;
+  }
+  button.btn:hover:not(:disabled){border-color:var(--trace);}
+  button.btn:disabled{opacity:.4;cursor:not-allowed;}
+  button.btn.primary{background:var(--trace-dim);border-color:var(--trace-dim);color:#eafff2;}
+  button.btn.primary:hover:not(:disabled){border-color:var(--trace);}
+  button.btn.ghost{background:transparent;}
+
+  .result{
+    background:#0a1210;
+    border:1px solid var(--line);
+    border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    min-height:60px;
+    padding:8px;
+    margin-bottom:8px;
+  }
+  .result:empty::before{content:"Noch kein Zuschnitt";color:#3f4e46;font-family:var(--mono);font-size:11px;}
+
+  .status{font-family:var(--mono);font-size:11.5px;color:var(--muted);min-height:16px;line-height:1.5;}
+  .status.ok{color:var(--trace);}
+
+  .error-banner{
+    background:var(--error-bg);
+    border:1px solid var(--error);
+    color:#ffcfc9;
+    border-radius:8px;
+    padding:13px 16px;
+    font-size:13.5px;
+    line-height:1.5;
+    margin-top:18px;
+  }
+  .error-banner strong{color:var(--error);font-family:var(--mono);text-transform:uppercase;font-size:11px;letter-spacing:.06em;display:block;margin-bottom:4px;}
+
+  .go-view{
+    margin-top:22px;
+    display:flex;justify-content:flex-end;
+  }
+
+  .view-wrap{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;}
+  .view-col{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px;
+    text-align:center;
+  }
+  .view-col h3{
+    font-family:var(--mono);
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    margin:0 0 10px;
+    color:var(--muted);
+  }
+  .view-col canvas{
+    background:#0a1210;
+    border:1px solid var(--line);
+    border-radius:6px;
+  }
+  .view-note{
+    text-align:center;color:var(--muted);font-size:12.5px;margin-top:18px;font-family:var(--mono);
+  }
+  .back-btn{margin-top:22px;}
+
+  .corner-legend{font-family:var(--mono);font-size:10.5px;color:#5c6f64;margin-top:6px;}
+  .corner-legend span.tl{color:var(--pad);}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header>
+    <p class="eyebrow">// Platinen-Analyse</p>
+    <h1>Leiterplatten-Scanner</h1>
+    <p>Vorder- und Rückseitenfoto hochladen, Kanten prüfen und im Betrachtungsmodus beide Seiten deckungsgleich abgleichen.</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" id="tabUpload">1 · Hochladen</button>
+    <button class="tab" id="tabView" disabled>2 · Betrachten</button>
+  </div>
+
+  <section id="uploadMode">
+    <div class="panels">
+      <div class="side-panel" data-side="front">
+        <h2><span class="dot"></span>Vorderseite</h2>
+        <p class="hint">Foto der Bestückungsseite. Die Kanten werden automatisch erkannt — Eckpunkte lassen sich per Ziehen korrigieren.</p>
+        <input type="file" accept="image/*" id="fileFront">
+        <div class="canvas-wrap"><canvas id="canvasFrontOrig"></canvas></div>
+        <p class="corner-legend"><span class="tl">●</span> oben&nbsp;links · Eckpunkte per Drag anpassen</p>
+        <div class="controls">
+          <button class="btn ghost" id="redoFront">Neu erkennen</button>
+          <button class="btn primary" id="confirmFront">Zuschnitt übernehmen</button>
+        </div>
+        <div class="result" id="resultWrapFront"><canvas id="canvasFrontResult" style="display:none"></canvas></div>
+        <div class="status" id="statusFront"></div>
+      </div>
+
+      <div class="side-panel" data-side="back">
+        <h2><span class="dot"></span>Rückseite</h2>
+        <p class="hint">Foto der Lötseite, oberer Bildrand entspricht derselben Platinenkante wie bei der Vorderseite.</p>
+        <input type="file" accept="image/*" id="fileBack">
+        <div class="canvas-wrap"><canvas id="canvasBackOrig"></canvas></div>
+        <p class="corner-legend"><span class="tl">●</span> oben&nbsp;links · Eckpunkte per Drag anpassen</p>
+        <div class="controls">
+          <button class="btn ghost" id="redoBack">Neu erkennen</button>
+          <button class="btn primary" id="confirmBack">Zuschnitt übernehmen</button>
+        </div>
+        <div class="result" id="resultWrapBack"><canvas id="canvasBackResult" style="display:none"></canvas></div>
+        <div class="status" id="statusBack"></div>
+      </div>
+    </div>
+
+    <div id="uploadError" class="error-banner hidden">
+      <strong>Seitenverhältnis passt nicht</strong>
+      <span id="uploadErrorText"></span>
+    </div>
+
+    <div class="go-view">
+      <button class="btn primary hidden" id="goToView">Weiter zur Ansicht →</button>
+    </div>
+  </section>
+
+  <section id="viewMode" class="hidden">
+    <div class="view-wrap">
+      <div class="view-col">
+        <h3>Vorderseite</h3>
+        <canvas id="viewFront"></canvas>
+      </div>
+      <div class="view-col">
+        <h3>Rückseite</h3>
+        <canvas id="viewBack"></canvas>
+      </div>
+    </div>
+    <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert.</p>
+    <div style="text-align:center" class="back-btn">
+      <button class="btn ghost" id="backToUpload">← Zurück zum Hochladen</button>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const MAX_WORK_DIM = 1500;   // Arbeitsauflösung nach Upload
+  const PROC_MAX = 360;        // Auflösung für Kantenerkennung
+  const PREVIEW_MAX = 380;     // Anzeige-Breite der Vorschau-Canvas
+  const CROP_MAX_DIM = 1000;   // Max. Pixelgröße des Zuschnitts
+  const ASPECT_MAX_DIFF = 0.08; // 8% erlaubte Abweichung des Seitenverhältnisses
+
+  const state = {
+    front: { workCanvas:null, corners:null, resultCanvas:null, confirmed:false, dispScale:1, dragAttached:false },
+    back:  { workCanvas:null, corners:null, resultCanvas:null, confirmed:false, dispScale:1, dragAttached:false }
+  };
+  let viewReady = false;
+
+  const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+  const $ = id => document.getElementById(id);
+  const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+
+  /* ---------------------------------------------------------------- */
+  /* Bild laden                                                        */
+  /* ---------------------------------------------------------------- */
+
+  function loadImageFile(file){
+    return new Promise((resolve, reject)=>{
+      if(!file.type.startsWith('image/')){ reject(new Error('Bitte eine Bilddatei auswählen.')); return; }
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Bild konnte nicht geladen werden.'));
+        img.src = ev.target.result;
+      };
+      reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function makeWorkCanvas(img, maxDim){
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const scale = Math.min(1, maxDim / Math.max(w,h));
+    const cw = Math.max(1, Math.round(w*scale)), ch = Math.max(1, Math.round(h*scale));
+    const c = document.createElement('canvas');
+    c.width = cw; c.height = ch;
+    c.getContext('2d').drawImage(img, 0, 0, cw, ch);
+    return c;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Bildverarbeitung: Otsu, Morphologie, Connected Components          */
+  /* ---------------------------------------------------------------- */
+
+  function otsuThreshold(hist, total){
+    let sum = 0;
+    for(let i=0;i<256;i++) sum += i*hist[i];
+    let sumB=0, wB=0, wF=0, varMax=0, threshold=0;
+    for(let t=0;t<256;t++){
+      wB += hist[t];
+      if(wB===0) continue;
+      wF = total - wB;
+      if(wF===0) break;
+      sumB += t*hist[t];
+      const mB = sumB/wB, mF = (sum-sumB)/wF;
+      const varBetween = wB*wF*(mB-mF)*(mB-mF);
+      if(varBetween > varMax){ varMax = varBetween; threshold = t; }
+    }
+    return threshold;
+  }
+
+  const NEI4 = [[-1,0],[1,0],[0,-1],[0,1]];
+
+  function erode(mask,w,h){
+    const out = new Uint8Array(w*h);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const idx = y*w+x;
+      if(mask[idx]===0){ continue; }
+      let ok = 1;
+      for(const [dx,dy] of NEI4){
+        const nx=x+dx, ny=y+dy;
+        if(nx<0||ny<0||nx>=w||ny>=h||mask[ny*w+nx]===0){ ok=0; break; }
+      }
+      out[idx]=ok;
+    }
+    return out;
+  }
+  function dilate(mask,w,h){
+    const out = new Uint8Array(w*h);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const idx = y*w+x;
+      if(mask[idx]===1){ out[idx]=1; continue; }
+      let any=0;
+      for(const [dx,dy] of NEI4){
+        const nx=x+dx, ny=y+dy;
+        if(nx>=0&&ny>=0&&nx<w&&ny<h&&mask[ny*w+nx]===1){ any=1; break; }
+      }
+      out[idx]=any;
+    }
+    return out;
+  }
+
+  function largestComponent(mask,w,h){
+    const visited = new Uint8Array(w*h);
+    const qx = new Int32Array(w*h), qy = new Int32Array(w*h);
+    let best = null;
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const startIdx = y*w+x;
+      if(mask[startIdx]!==1 || visited[startIdx]) continue;
+      let qh=0, qt=0;
+      qx[qt]=x; qy[qt]=y; qt++; visited[startIdx]=1;
+      const pixels = [];
+      let minX=x,maxX=x,minY=y,maxY=y;
+      while(qh<qt){
+        const cx=qx[qh], cy=qy[qh]; qh++;
+        pixels.push(cy*w+cx);
+        if(cx<minX)minX=cx; if(cx>maxX)maxX=cx;
+        if(cy<minY)minY=cy; if(cy>maxY)maxY=cy;
+        for(const [dx,dy] of NEI4){
+          const nx=cx+dx, ny=cy+dy;
+          if(nx<0||ny<0||nx>=w||ny>=h) continue;
+          const ni=ny*w+nx;
+          if(!visited[ni] && mask[ni]===1){ visited[ni]=1; qx[qt]=nx; qy[qt]=ny; qt++; }
+        }
+      }
+      if(!best || pixels.length>best.pixels.length){
+        best = { pixels, minX,maxX,minY,maxY,
+          touchesAllBorders: (minX===0&&maxX===w-1&&minY===0&&maxY===h-1) };
+      }
+    }
+    return best;
+  }
+
+  function extractBoundary(mask,w,h,pixels){
+    const set = new Set(pixels);
+    const pts = [];
+    for(const idx of pixels){
+      const x = idx % w, y = (idx / w) | 0;
+      if(x===0||y===0||x===w-1||y===h-1||
+         !set.has(idx-1)||!set.has(idx+1)||!set.has(idx-w)||!set.has(idx+w)){
+        pts.push({x,y});
+      }
+    }
+    return pts;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Konvexe Hülle & minimales umschließendes Rechteck                  */
+  /* ---------------------------------------------------------------- */
+
+  function convexHull(points){
+    const pts = points.slice().sort((a,b)=> a.x-b.x || a.y-b.y);
+    const cross = (o,a,b) => (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x);
+    const lower = [];
+    for(const p of pts){
+      while(lower.length>=2 && cross(lower[lower.length-2],lower[lower.length-1],p)<=0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for(let i=pts.length-1;i>=0;i--){
+      const p = pts[i];
+      while(upper.length>=2 && cross(upper[upper.length-2],upper[upper.length-1],p)<=0) upper.pop();
+      upper.push(p);
+    }
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
+
+  function minAreaRect(hull){
+    let best = { area: Infinity };
+    const n = hull.length;
+    for(let i=0;i<n;i++){
+      const p1 = hull[i], p2 = hull[(i+1)%n];
+      let ux = p2.x-p1.x, uy = p2.y-p1.y;
+      const len = Math.hypot(ux,uy) || 1e-6;
+      ux/=len; uy/=len;
+      const vx = -uy, vy = ux;
+      let minA=Infinity,maxA=-Infinity,minB=Infinity,maxB=-Infinity;
+      for(const p of hull){
+        const dx=p.x-p1.x, dy=p.y-p1.y;
+        const a = dx*ux+dy*uy, b = dx*vx+dy*vy;
+        if(a<minA)minA=a; if(a>maxA)maxA=a;
+        if(b<minB)minB=b; if(b>maxB)maxB=b;
+      }
+      const area = (maxA-minA)*(maxB-minB);
+      if(area<best.area) best = {area, p1, ux,uy,vx,vy, minA,maxA,minB,maxB};
+    }
+    const corner = (a,b) => ({ x: best.p1.x+best.ux*a+best.vx*b, y: best.p1.y+best.uy*a+best.vy*b });
+    return [
+      corner(best.minA,best.minB),
+      corner(best.maxA,best.minB),
+      corner(best.maxA,best.maxB),
+      corner(best.minA,best.maxB)
+    ];
+  }
+
+  function orderCorners(pts){
+    const sorted = pts.slice().sort((a,b)=>a.y-b.y);
+    const top = sorted.slice(0,2).sort((a,b)=>a.x-b.x);
+    const bottom = sorted.slice(2,4).sort((a,b)=>a.x-b.x);
+    return [top[0], top[1], bottom[1], bottom[0]]; // TL, TR, BR, BL
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Kantenerkennung                                                    */
+  /* ---------------------------------------------------------------- */
+
+  function detectCorners(workCanvas){
+    const pScale = Math.min(1, PROC_MAX / Math.max(workCanvas.width, workCanvas.height));
+    const pw = Math.max(1, Math.round(workCanvas.width*pScale));
+    const ph = Math.max(1, Math.round(workCanvas.height*pScale));
+    const pc = document.createElement('canvas');
+    pc.width = pw; pc.height = ph;
+    const pctx = pc.getContext('2d', {willReadFrequently:true});
+    pctx.drawImage(workCanvas, 0, 0, pw, ph);
+    const imgData = pctx.getImageData(0,0,pw,ph);
+    const d = imgData.data;
+
+    // Hintergrundfarbe aus dem Bildrand schätzen
+    const margin = Math.max(2, Math.round(0.03*Math.min(pw,ph)));
+    let rs=0,gs=0,bs=0,cnt=0;
+    for(let y=0;y<ph;y++) for(let x=0;x<pw;x++){
+      if(x<margin||x>=pw-margin||y<margin||y>=ph-margin){
+        const i=(y*pw+x)*4; rs+=d[i]; gs+=d[i+1]; bs+=d[i+2]; cnt++;
+      }
+    }
+    const bgR=rs/cnt, bgG=gs/cnt, bgB=bs/cnt;
+
+    // Abstand jedes Pixels zur Hintergrundfarbe
+    const distMap = new Float32Array(pw*ph);
+    let maxDist = 0;
+    for(let p=0;p<pw*ph;p++){
+      const i=p*4;
+      const dr=d[i]-bgR, dg=d[i+1]-bgG, db=d[i+2]-bgB;
+      const dd = Math.sqrt(dr*dr+dg*dg+db*db);
+      distMap[p]=dd;
+      if(dd>maxDist) maxDist=dd;
+    }
+    const norm = maxDist>0 ? 255/maxDist : 1;
+    const hist = new Uint32Array(256);
+    for(let p=0;p<pw*ph;p++) hist[Math.min(255, Math.round(distMap[p]*norm))]++;
+    const tNorm = otsuThreshold(hist, pw*ph);
+    const threshold = maxDist>0 ? tNorm/norm : 0;
+
+    let mask = new Uint8Array(pw*ph);
+    for(let p=0;p<pw*ph;p++) mask[p] = distMap[p]>threshold ? 1 : 0;
+    mask = erode(mask,pw,ph);
+    mask = dilate(mask,pw,ph);
+
+    const comp = largestComponent(mask,pw,ph);
+    const area = pw*ph;
+    let corners;
+
+    if(!comp || comp.pixels.length < 0.02*area || comp.touchesAllBorders){
+      const inset = 0.04;
+      corners = [
+        {x: pw*inset,     y: ph*inset},
+        {x: pw*(1-inset), y: ph*inset},
+        {x: pw*(1-inset), y: ph*(1-inset)},
+        {x: pw*inset,     y: ph*(1-inset)}
+      ];
+    } else {
+      const boundary = extractBoundary(mask,pw,ph,comp.pixels);
+      const hull = convexHull(boundary);
+      if(hull.length<3){
+        corners = [{x:0,y:0},{x:pw,y:0},{x:pw,y:ph},{x:0,y:ph}];
+      } else {
+        corners = orderCorners(minAreaRect(hull));
+      }
+    }
+
+    const sx = workCanvas.width/pw, sy = workCanvas.height/ph;
+    return corners.map(c => ({x:c.x*sx, y:c.y*sy}));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Perspektivische Entzerrung (Rotation + Zuschnitt bei Verkippung)   */
+  /* ---------------------------------------------------------------- */
+
+  function solveLinearSystem(A,B){
+    const n = A.length;
+    const M = A.map(r=>r.slice());
+    const b = B.slice();
+    for(let col=0; col<n; col++){
+      let maxRow = col;
+      for(let r=col+1;r<n;r++) if(Math.abs(M[r][col])>Math.abs(M[maxRow][col])) maxRow=r;
+      [M[col],M[maxRow]] = [M[maxRow],M[col]];
+      [b[col],b[maxRow]] = [b[maxRow],b[col]];
+      const piv = M[col][col] || 1e-9;
+      for(let r=0;r<n;r++){
+        if(r===col) continue;
+        const factor = M[r][col]/piv;
+        for(let c=col;c<n;c++) M[r][c] -= factor*M[col][c];
+        b[r] -= factor*b[col];
+      }
+    }
+    return M.map((row,i)=> b[i] / (row[i] || 1e-9));
+  }
+
+  function computeHomography(src, dst){
+    const A=[], B=[];
+    for(let i=0;i<4;i++){
+      const {x,y} = src[i], X = dst[i].x, Y = dst[i].y;
+      A.push([x,y,1,0,0,0,-x*X,-y*X]); B.push(X);
+      A.push([0,0,0,x,y,1,-x*Y,-y*Y]); B.push(Y);
+    }
+    const h = solveLinearSystem(A,B);
+    return [h[0],h[1],h[2], h[3],h[4],h[5], h[6],h[7], 1];
+  }
+
+  function applyH(H,x,y){
+    const X = H[0]*x+H[1]*y+H[2];
+    const Y = H[3]*x+H[4]*y+H[5];
+    const W = H[6]*x+H[7]*y+H[8];
+    return [X/W, Y/W];
+  }
+
+  function warpPerspective(srcCanvas, corners, outW, outH){
+    const sctx = srcCanvas.getContext('2d', {willReadFrequently:true});
+    const srcData = sctx.getImageData(0,0,srcCanvas.width, srcCanvas.height);
+    const sW = srcCanvas.width, sH = srcCanvas.height;
+    const dstCanvas = document.createElement('canvas');
+    dstCanvas.width = outW; dstCanvas.height = outH;
+    const dctx = dstCanvas.getContext('2d');
+    const dstImgData = dctx.createImageData(outW,outH);
+    const dstCorners = [{x:0,y:0},{x:outW,y:0},{x:outW,y:outH},{x:0,y:outH}];
+    const H = computeHomography(dstCorners, corners); // Ziel -> Quelle
+    const sd = srcData.data, dd = dstImgData.data;
+
+    for(let y=0;y<outH;y++){
+      for(let x=0;x<outW;x++){
+        const [sx,sy] = applyH(H, x+0.5, y+0.5);
+        const di = (y*outW+x)*4;
+        if(sx>=0 && sx<sW-1 && sy>=0 && sy<sH-1){
+          const x0=Math.floor(sx), y0=Math.floor(sy);
+          const fx=sx-x0, fy=sy-y0;
+          for(let c=0;c<4;c++){
+            const i00=(y0*sW+x0)*4+c, i10=(y0*sW+x0+1)*4+c;
+            const i01=((y0+1)*sW+x0)*4+c, i11=((y0+1)*sW+x0+1)*4+c;
+            const top = sd[i00]*(1-fx)+sd[i10]*fx;
+            const bot = sd[i01]*(1-fx)+sd[i11]*fx;
+            dd[di+c] = top*(1-fy)+bot*fy;
+          }
+        } else {
+          dd[di]=255; dd[di+1]=255; dd[di+2]=255; dd[di+3]=255;
+        }
+      }
+    }
+    dctx.putImageData(dstImgData,0,0);
+    return dstCanvas;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* UI: Vorschau, Overlay, Drag-Handles                                */
+  /* ---------------------------------------------------------------- */
+
+  function drawOverlay(side){
+    const st = state[side];
+    const c = $('canvas'+cap(side)+'Orig');
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0,0,c.width,c.height);
+    ctx.drawImage(st.workCanvas, 0,0, c.width, c.height);
+    const pts = st.corners.map(p => ({x:p.x*st.dispScale, y:p.y*st.dispScale}));
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i=1;i<4;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.strokeStyle = '#39d98a'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = 'rgba(57,217,138,0.15)'; ctx.fill();
+    pts.forEach((p,i)=>{
+      ctx.beginPath(); ctx.arc(p.x,p.y,7,0,Math.PI*2);
+      ctx.fillStyle = i===0 ? '#ffb84d' : '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#0d1512'; ctx.lineWidth = 1.5; ctx.stroke();
+    });
+  }
+
+  function renderOriginalPreview(side){
+    const st = state[side];
+    const c = $('canvas'+cap(side)+'Orig');
+    const scale = Math.min(1, PREVIEW_MAX/st.workCanvas.width);
+    c.width = Math.round(st.workCanvas.width*scale);
+    c.height = Math.round(st.workCanvas.height*scale);
+    st.dispScale = scale;
+    drawOverlay(side);
+    attachDragHandlers(side);
+  }
+
+  function attachDragHandlers(side){
+    const st = state[side];
+    if(st.dragAttached) return;
+    st.dragAttached = true;
+    const c = $('canvas'+cap(side)+'Orig');
+    let dragIdx = -1;
+
+    const getPos = e => {
+      const r = c.getBoundingClientRect();
+      const cx = e.touches ? e.touches[0].clientX : e.clientX;
+      const cy = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x:(cx-r.left)*(c.width/r.width), y:(cy-r.top)*(c.height/r.height) };
+    };
+    const down = e => {
+      const p = getPos(e);
+      const pts = st.corners.map(pt => ({x:pt.x*st.dispScale, y:pt.y*st.dispScale}));
+      let min = 1e9, idx = -1;
+      pts.forEach((pt,i)=>{ const dd=Math.hypot(pt.x-p.x,pt.y-p.y); if(dd<min){min=dd; idx=i;} });
+      if(min < 18){ dragIdx = idx; e.preventDefault(); }
+    };
+    const move = e => {
+      if(dragIdx===-1) return;
+      e.preventDefault();
+      const p = getPos(e);
+      const nx = Math.min(c.width, Math.max(0, p.x));
+      const ny = Math.min(c.height, Math.max(0, p.y));
+      st.corners[dragIdx] = { x: nx/st.dispScale, y: ny/st.dispScale };
+      drawOverlay(side);
+    };
+    const up = () => { dragIdx = -1; };
+
+    c.addEventListener('mousedown', down);
+    c.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    c.addEventListener('touchstart', down, {passive:false});
+    c.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', up);
+  }
+
+  function renderResultPreview(side){
+    const st = state[side];
+    const c = $('canvas'+cap(side)+'Result');
+    c.style.display = 'block';
+    const scale = Math.min(1, PREVIEW_MAX/st.resultCanvas.width);
+    c.width = Math.round(st.resultCanvas.width*scale);
+    c.height = Math.round(st.resultCanvas.height*scale);
+    c.getContext('2d').drawImage(st.resultCanvas, 0,0, c.width, c.height);
+  }
+
+  function updateStatus(side, text, ok){
+    const el = $('status'+cap(side));
+    el.textContent = text;
+    el.className = 'status' + (ok ? ' ok' : '');
+  }
+
+  function showUploadError(text){
+    $('uploadErrorText').textContent = text;
+    $('uploadError').classList.remove('hidden');
+  }
+  function hideUploadError(){
+    $('uploadError').classList.add('hidden');
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Datei-Handling                                                     */
+  /* ---------------------------------------------------------------- */
+
+  async function handleFile(side, file){
+    hideUploadError();
+    updateStatus(side, 'Bild wird geladen …');
+    try{
+      const img = await loadImageFile(file);
+      const work = makeWorkCanvas(img, MAX_WORK_DIM);
+      state[side].workCanvas = work;
+      state[side].corners = detectCorners(work);
+      state[side].confirmed = false;
+      $('canvas'+cap(side)+'Result').style.display = 'none';
+      renderOriginalPreview(side);
+      updateStatus(side, 'Kanten automatisch erkannt — bei Bedarf Eckpunkte per Ziehen korrigieren, dann Zuschnitt übernehmen.');
+      $('goToView').classList.add('hidden');
+    } catch(err){
+      updateStatus(side, 'Fehler: ' + err.message);
+    }
+  }
+
+  function redoDetection(side){
+    if(!state[side].workCanvas) return;
+    state[side].corners = detectCorners(state[side].workCanvas);
+    state[side].confirmed = false;
+    $('canvas'+cap(side)+'Result').style.display = 'none';
+    drawOverlay(side);
+    updateStatus(side, 'Kanten erneut erkannt.');
+    hideUploadError();
+    $('goToView').classList.add('hidden');
+  }
+
+  function confirmCrop(side){
+    const st = state[side];
+    if(!st.workCanvas || !st.corners) return;
+    const c = st.corners; // TL, TR, BR, BL
+    const widthTop = dist(c[0],c[1]), widthBottom = dist(c[3],c[2]);
+    const heightLeft = dist(c[0],c[3]), heightRight = dist(c[1],c[2]);
+    let outW = Math.round((widthTop+widthBottom)/2);
+    let outH = Math.round((heightLeft+heightRight)/2);
+    const maxSide = Math.max(outW,outH);
+    if(maxSide > CROP_MAX_DIM){
+      const sc = CROP_MAX_DIM/maxSide;
+      outW = Math.round(outW*sc); outH = Math.round(outH*sc);
+    }
+    outW = Math.max(outW, 20); outH = Math.max(outH, 20);
+
+    st.resultCanvas = warpPerspective(st.workCanvas, c, outW, outH);
+    st.confirmed = true;
+    renderResultPreview(side);
+    updateStatus(side, `Zuschnitt übernommen (${outW}×${outH}px).`, true);
+    checkBothSidesAndAspect();
+  }
+
+  function checkBothSidesAndAspect(){
+    hideUploadError();
+    if(!(state.front.confirmed && state.back.confirmed)){
+      $('goToView').classList.add('hidden');
+      return;
+    }
+    const rF = state.front.resultCanvas.width / state.front.resultCanvas.height;
+    const rB = state.back.resultCanvas.width / state.back.resultCanvas.height;
+    const diff = Math.abs(rF-rB)/rF;
+
+    if(diff > ASPECT_MAX_DIFF){
+      showUploadError(
+        `Vorderseite (${rF.toFixed(2)}) und Rückseite (${rB.toFixed(2)}) unterscheiden sich um ${(diff*100).toFixed(1)}% — mehr als die erlaubten ${(ASPECT_MAX_DIFF*100).toFixed(0)}%. ` +
+        `Bitte die Eckpunkte der Rückseite korrigieren und den Zuschnitt erneut übernehmen.`
+      );
+      state.back.confirmed = false;
+      $('goToView').classList.add('hidden');
+      return;
+    }
+
+    if(diff > 0.001){
+      const newH = Math.round(state.back.resultCanvas.width / rF);
+      const scaled = document.createElement('canvas');
+      scaled.width = state.back.resultCanvas.width;
+      scaled.height = newH;
+      scaled.getContext('2d').drawImage(state.back.resultCanvas, 0,0, scaled.width, scaled.height);
+      state.back.resultCanvas = scaled;
+      renderResultPreview('back');
+      updateStatus('back', `Zuschnitt übernommen — automatisch auf Seitenverhältnis der Vorderseite skaliert (Abweichung war ${(diff*100).toFixed(1)}%).`, true);
+    }
+
+    $('goToView').classList.remove('hidden');
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Betrachtungsmodus                                                  */
+  /* ---------------------------------------------------------------- */
+
+  function drawBaseView(side){
+    const c = $('view'+cap(side));
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0,0,c.width,c.height);
+    ctx.drawImage(state[side].resultCanvas, 0,0, c.width, c.height);
+  }
+
+  function drawMarker(side, fx, fy){
+    drawBaseView(side);
+    const c = $('view'+cap(side));
+    const ctx = c.getContext('2d');
+    const x = fx*c.width, y = fy*c.height;
+    ctx.save();
+    ctx.strokeStyle = '#ff6b5e';
+    ctx.fillStyle = 'rgba(255,107,94,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x,y,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x-14,y); ctx.lineTo(x+14,y);
+    ctx.moveTo(x,y-14); ctx.lineTo(x,y+14);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function enterViewMode(){
+    const ratio = state.front.resultCanvas.width / state.front.resultCanvas.height;
+    const dw = Math.min(460, state.front.resultCanvas.width);
+    const dh = Math.round(dw/ratio);
+    ['front','back'].forEach(side=>{
+      const c = $('view'+cap(side));
+      c.width = dw; c.height = dh;
+      drawBaseView(side);
+    });
+    attachHoverHandlers();
+    viewReady = true;
+    $('tabView').disabled = false;
+    switchTab('view');
+  }
+
+  let hoverAttached = false;
+  function attachHoverHandlers(){
+    if(hoverAttached) return;
+    hoverAttached = true;
+    const cFront = $('viewFront'), cBack = $('viewBack');
+
+    const handler = (side, otherSide) => e => {
+      const c = $('view'+cap(side));
+      const r = c.getBoundingClientRect();
+      const fx = Math.min(1, Math.max(0, (e.clientX-r.left)/r.width));
+      const fy = Math.min(1, Math.max(0, (e.clientY-r.top)/r.height));
+      drawMarker(side, fx, fy);
+      drawMarker(otherSide, 1-fx, fy);
+    };
+    const leave = () => { drawBaseView('front'); drawBaseView('back'); };
+
+    cFront.addEventListener('mousemove', handler('front','back'));
+    cBack.addEventListener('mousemove', handler('back','front'));
+    cFront.addEventListener('mouseleave', leave);
+    cBack.addEventListener('mouseleave', leave);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Tabs & Events                                                      */
+  /* ---------------------------------------------------------------- */
+
+  function switchTab(which){
+    if(which==='view' && !viewReady) return;
+    $('uploadMode').classList.toggle('hidden', which!=='upload');
+    $('viewMode').classList.toggle('hidden', which!=='view');
+    $('tabUpload').classList.toggle('active', which==='upload');
+    $('tabView').classList.toggle('active', which==='view');
+  }
+
+  $('fileFront').addEventListener('change', e => { if(e.target.files[0]) handleFile('front', e.target.files[0]); });
+  $('fileBack').addEventListener('change', e => { if(e.target.files[0]) handleFile('back', e.target.files[0]); });
+  $('redoFront').addEventListener('click', () => redoDetection('front'));
+  $('redoBack').addEventListener('click', () => redoDetection('back'));
+  $('confirmFront').addEventListener('click', () => confirmCrop('front'));
+  $('confirmBack').addEventListener('click', () => confirmCrop('back'));
+  $('goToView').addEventListener('click', enterViewMode);
+  $('backToUpload').addEventListener('click', () => switchTab('upload'));
+  $('tabUpload').addEventListener('click', () => switchTab('upload'));
+  $('tabView').addEventListener('click', () => switchTab('view'));
+
+})();
+</script>
+</body>
+</html>
