@@ -115,6 +115,7 @@
   }
 
   .canvas-wrap{
+    position:relative;
     background:
       repeating-linear-gradient(45deg, #10201a 0 8px, #0d1a15 8px 16px);
     border:1px solid var(--line);
@@ -126,6 +127,21 @@
   }
   canvas{display:block;max-width:100%;touch-action:none;}
   #app canvas[id$="Orig"]{cursor:crosshair;}
+
+  .magnifier{
+    position:absolute;
+    width:150px;height:150px;
+    border-radius:50%;
+    border:3px solid var(--copper);
+    box-shadow:0 6px 18px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(0,0,0,0.5);
+    pointer-events:none;
+    z-index:5;
+  }
+  .magnifier.hidden{display:none;}
+  .magnifier.pos-br{ right:10px; bottom:10px; top:auto; left:auto; }
+  .magnifier.pos-bl{ left:10px; bottom:10px; top:auto; right:auto; }
+  .magnifier.pos-tl{ left:10px; top:10px; right:auto; bottom:auto; }
+  .magnifier.pos-tr{ right:10px; top:10px; left:auto; bottom:auto; }
 
   .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
   button.btn{
@@ -197,6 +213,19 @@
     background:#0a1210;
     border:1px solid var(--line);
     border-radius:6px;
+    cursor:crosshair;
+  }
+  .view-col canvas.pannable{cursor:grab;}
+  .view-col canvas.panning{cursor:grabbing;}
+
+  .zoom-bar{
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    margin-bottom:16px;
+  }
+  .zoom-bar .btn{padding:7px 13px;}
+  .zoom-label{
+    font-family:var(--mono);font-size:12px;color:var(--text);
+    min-width:52px;text-align:center;
   }
   .view-note{
     text-align:center;color:var(--muted);font-size:12.5px;margin-top:18px;font-family:var(--mono);
@@ -226,8 +255,11 @@
         <h2><span class="dot"></span>Vorderseite</h2>
         <p class="hint">Foto der Bestückungsseite. Die Kanten werden automatisch erkannt — Eckpunkte lassen sich per Ziehen korrigieren.</p>
         <input type="file" accept="image/*" id="fileFront">
-        <div class="canvas-wrap"><canvas id="canvasFrontOrig"></canvas></div>
-        <p class="corner-legend"><span class="tl">●</span> oben&nbsp;links · Eckpunkte per Drag anpassen</p>
+        <div class="canvas-wrap">
+          <canvas id="canvasFrontOrig"></canvas>
+          <canvas id="magnifierFront" class="magnifier hidden" width="150" height="150"></canvas>
+        </div>
+        <p class="corner-legend"><span class="tl">●</span> oben&nbsp;links · Eckpunkte per Drag anpassen — beim Ziehen erscheint eine Lupe in der Gegenecke</p>
         <div class="controls">
           <button class="btn ghost" id="redoFront">Neu erkennen</button>
           <button class="btn primary" id="confirmFront">Zuschnitt übernehmen</button>
@@ -240,8 +272,11 @@
         <h2><span class="dot"></span>Rückseite</h2>
         <p class="hint">Foto der Lötseite, oberer Bildrand entspricht derselben Platinenkante wie bei der Vorderseite.</p>
         <input type="file" accept="image/*" id="fileBack">
-        <div class="canvas-wrap"><canvas id="canvasBackOrig"></canvas></div>
-        <p class="corner-legend"><span class="tl">●</span> oben&nbsp;links · Eckpunkte per Drag anpassen</p>
+        <div class="canvas-wrap">
+          <canvas id="canvasBackOrig"></canvas>
+          <canvas id="magnifierBack" class="magnifier hidden" width="150" height="150"></canvas>
+        </div>
+        <p class="corner-legend"><span class="tl">●</span> oben&nbsp;links · Eckpunkte per Drag anpassen — beim Ziehen erscheint eine Lupe in der Gegenecke</p>
         <div class="controls">
           <button class="btn ghost" id="redoBack">Neu erkennen</button>
           <button class="btn primary" id="confirmBack">Zuschnitt übernehmen</button>
@@ -262,6 +297,12 @@
   </section>
 
   <section id="viewMode" class="hidden">
+    <div class="zoom-bar">
+      <button class="btn ghost" id="zoomOut" title="Verkleinern">−</button>
+      <span class="zoom-label" id="zoomLabel">100%</span>
+      <button class="btn ghost" id="zoomIn" title="Vergrößern">+</button>
+      <button class="btn ghost" id="zoomReset">Zurücksetzen</button>
+    </div>
     <div class="view-wrap">
       <div class="view-col">
         <h3>Vorderseite</h3>
@@ -272,7 +313,7 @@
         <canvas id="viewBack"></canvas>
       </div>
     </div>
-    <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert.</p>
+    <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert. Mausrad zum Zoomen, bei Vergrößerung Bild zum Verschieben ziehen.</p>
     <div style="text-align:center" class="back-btn">
       <button class="btn ghost" id="backToUpload">← Zurück zum Hochladen</button>
     </div>
@@ -666,6 +707,50 @@
     attachDragHandlers(side);
   }
 
+  // Zuordnung Eckindex (0=OL,1=OR,2=UR,3=UL) -> Position der Lupe in der jeweiligen Gegenecke
+  const MAGNIFIER_POS = ['pos-br','pos-bl','pos-tl','pos-tr'];
+  const MAGNIFIER_ZOOM = 4;
+
+  function showMagnifier(side, cornerIdx){
+    const mag = $('magnifier'+cap(side));
+    mag.classList.remove('hidden','pos-br','pos-bl','pos-tl','pos-tr');
+    mag.classList.add(MAGNIFIER_POS[cornerIdx]);
+  }
+
+  function hideMagnifier(side){
+    $('magnifier'+cap(side)).classList.add('hidden');
+  }
+
+  function updateMagnifier(side, px, py){
+    const st = state[side];
+    const mag = $('magnifier'+cap(side));
+    const ctx = mag.getContext('2d');
+    const size = mag.width;
+    const srcSize = size / MAGNIFIER_ZOOM;
+    const sx = px - srcSize/2, sy = py - srcSize/2;
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#0a1210';
+    ctx.fillRect(0,0,size,size);
+    ctx.drawImage(st.workCanvas, sx, sy, srcSize, srcSize, 0, 0, size, size);
+
+    // Konturlinie im Lupenbild zur Orientierung
+    const toMagSpace = (wx,wy) => ({ x:(wx-sx)*MAGNIFIER_ZOOM, y:(wy-sy)*MAGNIFIER_ZOOM });
+    const pts = st.corners.map(c => toMagSpace(c.x, c.y));
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i=1;i<4;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.strokeStyle = '#39d98a'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // Fadenkreuz auf der exakten Eckposition
+    ctx.strokeStyle = '#ffb84d'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(size/2-12, size/2); ctx.lineTo(size/2+12, size/2);
+    ctx.moveTo(size/2, size/2-12); ctx.lineTo(size/2, size/2+12);
+    ctx.stroke();
+  }
+
   function attachDragHandlers(side){
     const st = state[side];
     if(st.dragAttached) return;
@@ -684,7 +769,12 @@
       const pts = st.corners.map(pt => ({x:pt.x*st.dispScale, y:pt.y*st.dispScale}));
       let min = 1e9, idx = -1;
       pts.forEach((pt,i)=>{ const dd=Math.hypot(pt.x-p.x,pt.y-p.y); if(dd<min){min=dd; idx=i;} });
-      if(min < 18){ dragIdx = idx; e.preventDefault(); }
+      if(min < 18){
+        dragIdx = idx;
+        e.preventDefault();
+        showMagnifier(side, idx);
+        updateMagnifier(side, st.corners[idx].x, st.corners[idx].y);
+      }
     };
     const move = e => {
       if(dragIdx===-1) return;
@@ -694,8 +784,11 @@
       const ny = Math.min(c.height, Math.max(0, p.y));
       st.corners[dragIdx] = { x: nx/st.dispScale, y: ny/st.dispScale };
       drawOverlay(side);
+      updateMagnifier(side, st.corners[dragIdx].x, st.corners[dragIdx].y);
     };
-    const up = () => { dragIdx = -1; };
+    const up = () => {
+      if(dragIdx!==-1){ dragIdx = -1; hideMagnifier(side); }
+    };
 
     c.addEventListener('mousedown', down);
     c.addEventListener('mousemove', move);
@@ -822,18 +915,40 @@
   /* Betrachtungsmodus                                                  */
   /* ---------------------------------------------------------------- */
 
+  const ZOOM_MIN = 1, ZOOM_MAX = 8;
+  const viewState = { zoom:1, centerX:0.5, centerY:0.5 }; // centerX/Y beziehen sich auf die Vorderseite; Rückseite ist horizontal gespiegelt
+  const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
+
+  function clampViewCenter(){
+    const vis = 1/viewState.zoom;
+    viewState.centerX = clamp(viewState.centerX, vis/2, 1-vis/2);
+    viewState.centerY = clamp(viewState.centerY, vis/2, 1-vis/2);
+  }
+
+  // sichtbarer Ausschnitt (in Bildkoordinaten 0..1) für die jeweilige Seite
+  function getVisibleRect(side){
+    const vis = 1/viewState.zoom;
+    const cx = side==='front' ? viewState.centerX : 1-viewState.centerX;
+    const cy = viewState.centerY;
+    return { x0: cx-vis/2, y0: cy-vis/2, w: vis, h: vis };
+  }
+
   function drawBaseView(side){
     const c = $('view'+cap(side));
     const ctx = c.getContext('2d');
+    const rc = state[side].resultCanvas;
+    const rect = getVisibleRect(side);
     ctx.clearRect(0,0,c.width,c.height);
-    ctx.drawImage(state[side].resultCanvas, 0,0, c.width, c.height);
+    ctx.drawImage(rc,
+      rect.x0*rc.width, rect.y0*rc.height, rect.w*rc.width, rect.h*rc.height,
+      0, 0, c.width, c.height);
   }
 
-  function drawMarker(side, fx, fy){
+  function drawMarkerAtDisplay(side, dispFx, dispFy){
     drawBaseView(side);
     const c = $('view'+cap(side));
     const ctx = c.getContext('2d');
-    const x = fx*c.width, y = fy*c.height;
+    const x = dispFx*c.width, y = dispFy*c.height;
     ctx.save();
     ctx.strokeStyle = '#ff6b5e';
     ctx.fillStyle = 'rgba(255,107,94,0.25)';
@@ -846,15 +961,40 @@
     ctx.restore();
   }
 
+  function updateZoomLabel(){
+    $('zoomLabel').textContent = Math.round(viewState.zoom*100) + '%';
+    ['viewFront','viewBack'].forEach(id=>{
+      $(id).classList.toggle('pannable', viewState.zoom>1.001);
+    });
+  }
+
+  function redrawView(){
+    drawBaseView('front');
+    drawBaseView('back');
+  }
+
+  function setZoom(newZoom, anchor){
+    viewState.zoom = clamp(newZoom, ZOOM_MIN, ZOOM_MAX);
+    if(anchor){
+      viewState.centerX = anchor.frontX;
+      viewState.centerY = anchor.y;
+    }
+    clampViewCenter();
+    redrawView();
+    updateZoomLabel();
+  }
+
   function enterViewMode(){
     const ratio = state.front.resultCanvas.width / state.front.resultCanvas.height;
     const dw = Math.min(460, state.front.resultCanvas.width);
     const dh = Math.round(dw/ratio);
+    viewState.zoom = 1; viewState.centerX = 0.5; viewState.centerY = 0.5;
     ['front','back'].forEach(side=>{
       const c = $('view'+cap(side));
       c.width = dw; c.height = dh;
-      drawBaseView(side);
     });
+    redrawView();
+    updateZoomLabel();
     attachHoverHandlers();
     viewReady = true;
     $('tabView').disabled = false;
@@ -867,21 +1007,95 @@
     hoverAttached = true;
     const cFront = $('viewFront'), cBack = $('viewBack');
 
-    const handler = (side, otherSide) => e => {
+    // Hover-Markierung (nur wenn gerade nicht verschoben wird)
+    const hoverHandler = (side, otherSide) => e => {
+      if(panState.active) return;
       const c = $('view'+cap(side));
       const r = c.getBoundingClientRect();
-      const fx = Math.min(1, Math.max(0, (e.clientX-r.left)/r.width));
-      const fy = Math.min(1, Math.max(0, (e.clientY-r.top)/r.height));
-      drawMarker(side, fx, fy);
-      drawMarker(otherSide, 1-fx, fy);
-    };
-    const leave = () => { drawBaseView('front'); drawBaseView('back'); };
+      const dispFx = clamp((e.clientX-r.left)/r.width, 0, 1);
+      const dispFy = clamp((e.clientY-r.top)/r.height, 0, 1);
 
-    cFront.addEventListener('mousemove', handler('front','back'));
-    cBack.addEventListener('mousemove', handler('back','front'));
+      const rect = getVisibleRect(side);
+      const imgFx = rect.x0 + dispFx*rect.w;
+      const imgFy = rect.y0 + dispFy*rect.h;
+      drawMarkerAtDisplay(side, dispFx, dispFy);
+
+      const otherImgFx = 1-imgFx, otherImgFy = imgFy;
+      const otherRect = getVisibleRect(otherSide);
+      const otherDispFx = (otherImgFx-otherRect.x0)/otherRect.w;
+      const otherDispFy = (otherImgFy-otherRect.y0)/otherRect.h;
+      if(otherDispFx>=0 && otherDispFx<=1 && otherDispFy>=0 && otherDispFy<=1){
+        drawMarkerAtDisplay(otherSide, otherDispFx, otherDispFy);
+      } else {
+        drawBaseView(otherSide);
+      }
+    };
+    const leave = () => { if(!panState.active) redrawView(); };
+
+    cFront.addEventListener('mousemove', hoverHandler('front','back'));
+    cBack.addEventListener('mousemove', hoverHandler('back','front'));
     cFront.addEventListener('mouseleave', leave);
     cBack.addEventListener('mouseleave', leave);
+
+    // Mausrad-Zoom, zentriert auf den Cursor
+    const wheelHandler = side => e => {
+      e.preventDefault();
+      const c = $('view'+cap(side));
+      const r = c.getBoundingClientRect();
+      const dispFx = clamp((e.clientX-r.left)/r.width, 0, 1);
+      const dispFy = clamp((e.clientY-r.top)/r.height, 0, 1);
+      const rect = getVisibleRect(side);
+      const imgFx = rect.x0 + dispFx*rect.w;
+      const imgFy = rect.y0 + dispFy*rect.h;
+      const frontX = side==='front' ? imgFx : 1-imgFx;
+      const factor = e.deltaY < 0 ? 1.2 : 1/1.2;
+      setZoom(viewState.zoom*factor, {frontX, y:imgFy});
+    };
+    cFront.addEventListener('wheel', wheelHandler('front'), {passive:false});
+    cBack.addEventListener('wheel', wheelHandler('back'), {passive:false});
+
+    // Verschieben (Pan) bei Vergrößerung
+    const startPan = side => e => {
+      if(viewState.zoom<=1.001) return;
+      panState.active = true;
+      panState.side = side;
+      panState.startX = e.clientX;
+      panState.startY = e.clientY;
+      panState.startCenterX = viewState.centerX;
+      panState.startCenterY = viewState.centerY;
+      $('view'+cap(side)).classList.add('panning');
+      e.preventDefault();
+    };
+    cFront.addEventListener('mousedown', startPan('front'));
+    cBack.addEventListener('mousedown', startPan('back'));
+
+    window.addEventListener('mousemove', e => {
+      if(!panState.active) return;
+      const c = $('view'+cap(panState.side));
+      const r = c.getBoundingClientRect();
+      const dxDisp = (e.clientX-panState.startX)/r.width;
+      const dyDisp = (e.clientY-panState.startY)/r.height;
+      const vis = 1/viewState.zoom;
+      const sign = panState.side==='front' ? -1 : 1;
+      viewState.centerX = panState.startCenterX + sign*dxDisp*vis;
+      viewState.centerY = panState.startCenterY - dyDisp*vis;
+      clampViewCenter();
+      redrawView();
+    });
+    window.addEventListener('mouseup', () => {
+      if(panState.active){
+        panState.active = false;
+        $('viewFront').classList.remove('panning');
+        $('viewBack').classList.remove('panning');
+      }
+    });
   }
+
+  const panState = { active:false, side:null, startX:0, startY:0, startCenterX:0.5, startCenterY:0.5 };
+
+  $('zoomIn').addEventListener('click', () => setZoom(viewState.zoom*1.3));
+  $('zoomOut').addEventListener('click', () => setZoom(viewState.zoom/1.3));
+  $('zoomReset').addEventListener('click', () => setZoom(1, {frontX:0.5, y:0.5}));
 
   /* ---------------------------------------------------------------- */
   /* Tabs & Events                                                      */
