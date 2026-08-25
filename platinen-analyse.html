@@ -143,6 +143,23 @@
   .magnifier.pos-tl{ left:10px; top:10px; right:auto; bottom:auto; }
   .magnifier.pos-tr{ right:10px; top:10px; left:auto; bottom:auto; }
 
+  .dropzone-hint{
+    position:absolute;
+    inset:0;
+    display:flex;align-items:center;justify-content:center;
+    text-align:center;
+    padding:0 16px;
+    margin:0;
+    font-family:var(--mono);
+    font-size:12px;
+    color:#526056;
+    pointer-events:none;
+    transition:color .15s;
+  }
+  .canvas-wrap.has-image .dropzone-hint{display:none;}
+  .canvas-wrap.dragover{border-color:var(--trace); background-color:rgba(57,217,138,0.08);}
+  .canvas-wrap.dragover .dropzone-hint{color:var(--trace);}
+
   .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
   button.btn{
     font-family:var(--mono);
@@ -234,6 +251,81 @@
 
   .corner-legend{font-family:var(--mono);font-size:10.5px;color:#5c6f64;margin-top:6px;}
   .corner-legend span.tl{color:var(--pad);}
+
+  .legend-panel{
+    max-width:640px;
+    margin:24px auto 0;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px 18px;
+  }
+  .legend-panel h3{
+    font-family:var(--mono);
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    margin:0 0 12px;
+    color:var(--muted);
+  }
+  .legend-list{display:flex;flex-direction:column;gap:8px;}
+  .legend-row{
+    display:flex;align-items:center;gap:10px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:7px 9px;
+    transition:border-color .3s, background .3s;
+  }
+  .legend-row.highlight{border-color:var(--copper); background:rgba(201,136,79,0.14);}
+  .legend-color{
+    -webkit-appearance:none;
+    appearance:none;
+    width:22px;height:22px;
+    flex:0 0 auto;
+    border:none;
+    border-radius:50%;
+    padding:0;
+    background:none;
+    cursor:pointer;
+    box-shadow:0 0 0 2px rgba(255,255,255,0.18) inset;
+  }
+  .legend-color::-webkit-color-swatch-wrapper{padding:0;border-radius:50%;}
+  .legend-color::-webkit-color-swatch{border:none;border-radius:50%;}
+  .legend-color::-moz-color-swatch{border:none;border-radius:50%;}
+  .legend-color:hover{box-shadow:0 0 0 2px var(--trace) inset;}
+  .legend-num{
+    font-family:var(--mono);font-size:12px;color:var(--text);
+    flex:0 0 auto;min-width:26px;
+  }
+  .legend-input{
+    flex:1 1 auto;
+    background:var(--bg);
+    border:1px solid var(--line);
+    border-radius:5px;
+    color:var(--text);
+    font-family:var(--sans);
+    font-size:13px;
+    padding:6px 9px;
+    min-width:0;
+  }
+  .legend-input:focus{outline:none;border-color:var(--trace);}
+  .legend-del{
+    flex:0 0 auto;
+    background:none;
+    border:1px solid var(--line);
+    color:var(--muted);
+    border-radius:5px;
+    width:26px;height:26px;
+    font-size:15px;line-height:1;
+    cursor:pointer;
+  }
+  .legend-del:hover{border-color:var(--error);color:var(--error);}
+  .legend-empty{
+    color:#526056;font-family:var(--mono);font-size:12px;
+    margin:0; text-align:center;
+  }
+  .legend-list:not(:empty) + .legend-empty{display:none;}
 </style>
 </head>
 <body>
@@ -255,9 +347,10 @@
         <h2><span class="dot"></span>Vorderseite</h2>
         <p class="hint">Foto der Bestückungsseite. Die Kanten werden automatisch erkannt — Eckpunkte lassen sich per Ziehen korrigieren.</p>
         <input type="file" accept="image/*" id="fileFront">
-        <div class="canvas-wrap">
+        <div class="canvas-wrap dropzone" id="dropzoneFront">
           <canvas id="canvasFrontOrig"></canvas>
           <canvas id="magnifierFront" class="magnifier hidden" width="150" height="150"></canvas>
+          <p class="dropzone-hint" id="dropHintFront">Foto hierher ziehen oder oben auswählen</p>
         </div>
         <p class="corner-legend"><span class="tl">●</span> oben&nbsp;links · Eckpunkte per Drag anpassen — beim Ziehen erscheint eine Lupe in der Gegenecke</p>
         <div class="controls">
@@ -272,9 +365,10 @@
         <h2><span class="dot"></span>Rückseite</h2>
         <p class="hint">Foto der Lötseite, oberer Bildrand entspricht derselben Platinenkante wie bei der Vorderseite.</p>
         <input type="file" accept="image/*" id="fileBack">
-        <div class="canvas-wrap">
+        <div class="canvas-wrap dropzone" id="dropzoneBack">
           <canvas id="canvasBackOrig"></canvas>
           <canvas id="magnifierBack" class="magnifier hidden" width="150" height="150"></canvas>
+          <p class="dropzone-hint" id="dropHintBack">Foto hierher ziehen oder oben auswählen</p>
         </div>
         <p class="corner-legend"><span class="tl">●</span> oben&nbsp;links · Eckpunkte per Drag anpassen — beim Ziehen erscheint eine Lupe in der Gegenecke</p>
         <div class="controls">
@@ -313,7 +407,14 @@
         <canvas id="viewBack"></canvas>
       </div>
     </div>
-    <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert. Mausrad zum Zoomen, bei Vergrößerung Bild zum Verschieben ziehen.</p>
+    <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert. Mausrad zum Zoomen, bei Vergrößerung Bild zum Verschieben ziehen. Klick setzt eine nummerierte Markierung, deren Farbe in der Legende per Klick auf den Farbkreis angepasst werden kann.</p>
+
+    <div class="legend-panel">
+      <h3>Legende</h3>
+      <div class="legend-list" id="legendList"></div>
+      <p class="legend-empty" id="legendEmpty">Noch keine Markierungen gesetzt — auf eine Stelle im Vorder- oder Rückseitenbild klicken, um eine Markierung zu setzen.</p>
+    </div>
+
     <div style="text-align:center" class="back-btn">
       <button class="btn ghost" id="backToUpload">← Zurück zum Hochladen</button>
     </div>
@@ -836,12 +937,36 @@
       state[side].corners = detectCorners(work);
       state[side].confirmed = false;
       $('canvas'+cap(side)+'Result').style.display = 'none';
+      $('dropzone'+cap(side)).classList.add('has-image');
       renderOriginalPreview(side);
       updateStatus(side, 'Kanten automatisch erkannt — bei Bedarf Eckpunkte per Ziehen korrigieren, dann Zuschnitt übernehmen.');
       $('goToView').classList.add('hidden');
     } catch(err){
       updateStatus(side, 'Fehler: ' + err.message);
     }
+  }
+
+  function setupDropzone(side){
+    const zone = $('dropzone'+cap(side));
+    let dragCounter = 0;
+    zone.addEventListener('dragenter', e => {
+      e.preventDefault();
+      dragCounter++;
+      zone.classList.add('dragover');
+    });
+    zone.addEventListener('dragover', e => { e.preventDefault(); });
+    zone.addEventListener('dragleave', e => {
+      e.preventDefault();
+      dragCounter = Math.max(0, dragCounter-1);
+      if(dragCounter===0) zone.classList.remove('dragover');
+    });
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      dragCounter = 0;
+      zone.classList.remove('dragover');
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if(file) handleFile(side, file);
+    });
   }
 
   function redoDetection(side){
@@ -919,6 +1044,17 @@
   const viewState = { zoom:1, centerX:0.5, centerY:0.5 }; // centerX/Y beziehen sich auf die Vorderseite; Rückseite ist horizontal gespiegelt
   const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
 
+  // Markierungen: Position (x,y) immer in Vorderseiten-Bildkoordinaten (0..1) gespeichert.
+  const MARKER_COLORS = ['#ff6b5e','#4ea1ff','#ffd23f','#c77dff','#39d98a','#ff8fc7','#3ddbd9','#f2f2f2'];
+  let markers = [];
+  let nextMarkerNumber = 1;
+
+  function hexToRgba(hex, alpha){
+    const v = hex.replace('#','');
+    const r = parseInt(v.substr(0,2),16), g = parseInt(v.substr(2,2),16), b = parseInt(v.substr(4,2),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
   function clampViewCenter(){
     const vis = 1/viewState.zoom;
     viewState.centerX = clamp(viewState.centerX, vis/2, 1-vis/2);
@@ -933,6 +1069,34 @@
     return { x0: cx-vis/2, y0: cy-vis/2, w: vis, h: vis };
   }
 
+  function drawPersistentMarker(ctx, x, y, marker){
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x,y,11,0,Math.PI*2);
+    ctx.fillStyle = hexToRgba(marker.color, 0.55);
+    ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = marker.color; ctx.stroke();
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#0d1512';
+    ctx.fillText(String(marker.number), x, y+0.5);
+    ctx.restore();
+  }
+
+  // liefert die aktuell auf einer Seite sichtbaren Markierungen mit ihrer Display-Position
+  function visibleMarkersForSide(side, canvasW, canvasH){
+    const rect = getVisibleRect(side);
+    const out = [];
+    markers.forEach(m=>{
+      const sx = side==='front' ? m.x : 1-m.x;
+      const sy = m.y;
+      const dfx = (sx-rect.x0)/rect.w, dfy = (sy-rect.y0)/rect.h;
+      if(dfx>=-0.03 && dfx<=1.03 && dfy>=-0.03 && dfy<=1.03){
+        out.push({ marker:m, x:dfx*canvasW, y:dfy*canvasH });
+      }
+    });
+    return out;
+  }
+
   function drawBaseView(side){
     const c = $('view'+cap(side));
     const ctx = c.getContext('2d');
@@ -942,22 +1106,23 @@
     ctx.drawImage(rc,
       rect.x0*rc.width, rect.y0*rc.height, rect.w*rc.width, rect.h*rc.height,
       0, 0, c.width, c.height);
+    visibleMarkersForSide(side, c.width, c.height).forEach(v => drawPersistentMarker(ctx, v.x, v.y, v.marker));
   }
 
-  function drawMarkerAtDisplay(side, dispFx, dispFy){
+  function drawHoverCrosshair(side, dispFx, dispFy){
     drawBaseView(side);
     const c = $('view'+cap(side));
     const ctx = c.getContext('2d');
     const x = dispFx*c.width, y = dispFy*c.height;
     ctx.save();
-    ctx.strokeStyle = '#ff6b5e';
-    ctx.fillStyle = 'rgba(255,107,94,0.25)';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(x,y,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(x-14,y); ctx.lineTo(x+14,y);
-    ctx.moveTo(x,y-14); ctx.lineTo(x,y+14);
+    ctx.moveTo(x-12,y); ctx.lineTo(x+12,y);
+    ctx.moveTo(x,y-12); ctx.lineTo(x,y+12);
     ctx.stroke();
+    ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.stroke();
     ctx.restore();
   }
 
@@ -984,11 +1149,103 @@
     updateZoomLabel();
   }
 
+  /* ---- Markierungen & Legende ---- */
+
+  function createMarker(frontX, frontY){
+    const number = nextMarkerNumber++;
+    const color = MARKER_COLORS[(number-1) % MARKER_COLORS.length];
+    markers.push({ id:'m'+number, number, color, x:frontX, y:frontY, label:'' });
+    renderLegend(true);
+    redrawView();
+  }
+
+  function deleteMarker(id){
+    markers = markers.filter(m => m.id !== id);
+    renderLegend();
+    redrawView();
+  }
+
+  function highlightLegendRow(id){
+    const row = document.querySelector(`.legend-row[data-marker-id="${id}"]`);
+    if(!row) return;
+    row.classList.add('highlight');
+    row.scrollIntoView({behavior:'smooth', block:'nearest'});
+    setTimeout(()=> row.classList.remove('highlight'), 900);
+  }
+
+  function renderLegend(focusLast){
+    const list = $('legendList');
+    list.innerHTML = '';
+    $('legendEmpty').style.display = markers.length ? 'none' : 'block';
+    // Neueste Markierung zuerst, damit der Blick oben bei der Platine bleibt
+    markers.slice().reverse().forEach(m=>{
+      const row = document.createElement('div');
+      row.className = 'legend-row';
+      row.dataset.markerId = m.id;
+
+      const colorPicker = document.createElement('input');
+      colorPicker.type = 'color';
+      colorPicker.className = 'legend-color';
+      colorPicker.title = 'Farbe ändern';
+      colorPicker.value = m.color;
+      colorPicker.addEventListener('input', () => {
+        m.color = colorPicker.value;
+        redrawView();
+      });
+
+      const num = document.createElement('span');
+      num.className = 'legend-num';
+      num.textContent = '#' + m.number;
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'legend-input';
+      input.placeholder = 'Beschreibung …';
+      input.value = m.label;
+      input.addEventListener('input', () => { m.label = input.value; });
+
+      const del = document.createElement('button');
+      del.className = 'legend-del';
+      del.title = 'Markierung löschen';
+      del.textContent = '×';
+      del.addEventListener('click', () => deleteMarker(m.id));
+
+      row.append(colorPicker, num, input, del);
+      list.appendChild(row);
+    });
+    if(focusLast && markers.length){
+      const lastId = markers[markers.length-1].id;
+      const input = document.querySelector(`.legend-row[data-marker-id="${lastId}"] .legend-input`);
+      if(input) input.focus();
+    }
+  }
+
+  function tryAddMarkerFromClick(side, clientX, clientY){
+    const c = $('view'+cap(side));
+    const r = c.getBoundingClientRect();
+    const dispFx = clamp((clientX-r.left)/r.width, 0, 1);
+    const dispFy = clamp((clientY-r.top)/r.height, 0, 1);
+
+    // Falls in der Nähe bereits eine Markierung sichtbar ist: nur hervorheben, keine neue setzen
+    const nearby = visibleMarkersForSide(side, c.width, c.height)
+      .find(v => Math.hypot(v.x - dispFx*c.width, v.y - dispFy*c.height) < 14);
+    if(nearby){ highlightLegendRow(nearby.marker.id); return; }
+
+    const rect = getVisibleRect(side);
+    const imgFx = rect.x0 + dispFx*rect.w;
+    const imgFy = rect.y0 + dispFy*rect.h;
+    const frontX = side==='front' ? imgFx : 1-imgFx;
+    const frontY = imgFy;
+    createMarker(clamp(frontX,0,1), clamp(frontY,0,1));
+  }
+
   function enterViewMode(){
     const ratio = state.front.resultCanvas.width / state.front.resultCanvas.height;
     const dw = Math.min(460, state.front.resultCanvas.width);
     const dh = Math.round(dw/ratio);
     viewState.zoom = 1; viewState.centerX = 0.5; viewState.centerY = 0.5;
+    markers = []; nextMarkerNumber = 1;
+    renderLegend();
     ['front','back'].forEach(side=>{
       const c = $('view'+cap(side));
       c.width = dw; c.height = dh;
@@ -1002,12 +1259,17 @@
   }
 
   let hoverAttached = false;
+  const panState = { active:false, side:null, startX:0, startY:0, startCenterX:0.5, startCenterY:0.5 };
+  let clickCandidate = null;
+  const CLICK_MOVE_TOLERANCE = 6;   // px
+  const CLICK_TIME_TOLERANCE = 600; // ms
+
   function attachHoverHandlers(){
     if(hoverAttached) return;
     hoverAttached = true;
     const cFront = $('viewFront'), cBack = $('viewBack');
 
-    // Hover-Markierung (nur wenn gerade nicht verschoben wird)
+    // Hover-Fadenkreuz (nur wenn gerade nicht verschoben wird)
     const hoverHandler = (side, otherSide) => e => {
       if(panState.active) return;
       const c = $('view'+cap(side));
@@ -1018,14 +1280,14 @@
       const rect = getVisibleRect(side);
       const imgFx = rect.x0 + dispFx*rect.w;
       const imgFy = rect.y0 + dispFy*rect.h;
-      drawMarkerAtDisplay(side, dispFx, dispFy);
+      drawHoverCrosshair(side, dispFx, dispFy);
 
       const otherImgFx = 1-imgFx, otherImgFy = imgFy;
       const otherRect = getVisibleRect(otherSide);
       const otherDispFx = (otherImgFx-otherRect.x0)/otherRect.w;
       const otherDispFy = (otherImgFy-otherRect.y0)/otherRect.h;
       if(otherDispFx>=0 && otherDispFx<=1 && otherDispFy>=0 && otherDispFy<=1){
-        drawMarkerAtDisplay(otherSide, otherDispFx, otherDispFy);
+        drawHoverCrosshair(otherSide, otherDispFx, otherDispFy);
       } else {
         drawBaseView(otherSide);
       }
@@ -1054,20 +1316,23 @@
     cFront.addEventListener('wheel', wheelHandler('front'), {passive:false});
     cBack.addEventListener('wheel', wheelHandler('back'), {passive:false});
 
-    // Verschieben (Pan) bei Vergrößerung
-    const startPan = side => e => {
-      if(viewState.zoom<=1.001) return;
-      panState.active = true;
-      panState.side = side;
-      panState.startX = e.clientX;
-      panState.startY = e.clientY;
-      panState.startCenterX = viewState.centerX;
-      panState.startCenterY = viewState.centerY;
-      $('view'+cap(side)).classList.add('panning');
+    // Mausklick: Verschieben (bei Zoom) ODER Markierung setzen (bei reinem Klick)
+    const onDown = side => e => {
+      if(e.button !== 0) return;
+      clickCandidate = { side, x:e.clientX, y:e.clientY, time:performance.now() };
+      if(viewState.zoom > 1.001){
+        panState.active = true;
+        panState.side = side;
+        panState.startX = e.clientX;
+        panState.startY = e.clientY;
+        panState.startCenterX = viewState.centerX;
+        panState.startCenterY = viewState.centerY;
+        $('view'+cap(side)).classList.add('panning');
+      }
       e.preventDefault();
     };
-    cFront.addEventListener('mousedown', startPan('front'));
-    cBack.addEventListener('mousedown', startPan('back'));
+    cFront.addEventListener('mousedown', onDown('front'));
+    cBack.addEventListener('mousedown', onDown('back'));
 
     window.addEventListener('mousemove', e => {
       if(!panState.active) return;
@@ -1082,16 +1347,22 @@
       clampViewCenter();
       redrawView();
     });
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', e => {
       if(panState.active){
         panState.active = false;
         $('viewFront').classList.remove('panning');
         $('viewBack').classList.remove('panning');
       }
+      if(clickCandidate){
+        const moved = Math.hypot(e.clientX-clickCandidate.x, e.clientY-clickCandidate.y);
+        const dt = performance.now()-clickCandidate.time;
+        if(moved < CLICK_MOVE_TOLERANCE && dt < CLICK_TIME_TOLERANCE){
+          tryAddMarkerFromClick(clickCandidate.side, clickCandidate.x, clickCandidate.y);
+        }
+        clickCandidate = null;
+      }
     });
   }
-
-  const panState = { active:false, side:null, startX:0, startY:0, startCenterX:0.5, startCenterY:0.5 };
 
   $('zoomIn').addEventListener('click', () => setZoom(viewState.zoom*1.3));
   $('zoomOut').addEventListener('click', () => setZoom(viewState.zoom/1.3));
@@ -1111,6 +1382,11 @@
 
   $('fileFront').addEventListener('change', e => { if(e.target.files[0]) handleFile('front', e.target.files[0]); });
   $('fileBack').addEventListener('change', e => { if(e.target.files[0]) handleFile('back', e.target.files[0]); });
+  setupDropzone('front');
+  setupDropzone('back');
+  // Verhindert, dass ein außerhalb der Dropzonen fallengelassenes Bild die Seite ersetzt
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => e.preventDefault());
   $('redoFront').addEventListener('click', () => redoDetection('front'));
   $('redoBack').addEventListener('click', () => redoDetection('back'));
   $('confirmFront').addEventListener('click', () => confirmCrop('front'));
