@@ -52,6 +52,69 @@
   }
   header p{color:var(--muted);max-width:680px;line-height:1.55;margin:0;font-size:14.5px;}
 
+  .project-bar{
+    display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+    margin-top:18px;
+  }
+  .project-label{
+    font-family:var(--mono);font-size:12px;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .project-name-input{
+    font-family:var(--sans);
+    font-size:14px;
+    color:var(--text);
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:9px 12px;
+    min-width:240px;
+    flex:1 1 240px;
+    max-width:360px;
+  }
+  .project-name-input:focus{outline:none;border-color:var(--trace);}
+  .project-select{
+    font-family:var(--sans);
+    font-size:13px;
+    color:var(--text);
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:9px 10px;
+    max-width:220px;
+  }
+  .project-hint{
+    font-family:var(--mono);
+    font-size:11px;
+    color:#526056;
+    margin:8px 0 0;
+  }
+
+  .modal-overlay{
+    position:fixed; inset:0;
+    background:rgba(6,10,8,0.72);
+    display:flex; align-items:center; justify-content:center;
+    z-index:50;
+    padding:20px;
+  }
+  .modal-overlay.hidden{display:none;}
+  .modal-box{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:22px;
+    max-width:380px;
+    width:100%;
+    box-shadow:0 12px 40px rgba(0,0,0,0.55);
+  }
+  .modal-message{
+    color:var(--text);
+    font-size:14.5px;
+    line-height:1.55;
+    margin:0 0 18px;
+  }
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;}
+
   .tabs{display:flex;gap:2px;margin:26px 0 22px;border-bottom:1px solid var(--line);}
   .tab{
     font-family:var(--mono);
@@ -244,6 +307,16 @@
     font-family:var(--mono);font-size:12px;color:var(--text);
     min-width:52px;text-align:center;
   }
+
+  .color-bar{
+    display:flex;align-items:center;justify-content:center;gap:12px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }
+  .color-bar-label{
+    font-family:var(--mono);font-size:12px;color:var(--muted);
+  }
+  .color-bar .palette-swatch{width:22px;height:22px;}
   .view-note{
     text-align:center;color:var(--muted);font-size:12.5px;margin-top:18px;font-family:var(--mono);
   }
@@ -270,36 +343,32 @@
   }
   .legend-list{display:flex;flex-direction:column;gap:8px;}
   .legend-row{
-    display:flex;align-items:center;gap:10px;
+    display:flex;flex-direction:column;gap:8px;
     background:var(--panel-2);
     border:1px solid var(--line);
     border-radius:7px;
-    padding:7px 9px;
+    padding:9px 10px;
     transition:border-color .3s, background .3s;
   }
   .legend-row.highlight{border-color:var(--copper); background:rgba(201,136,79,0.14);}
-  .legend-color{
-    -webkit-appearance:none;
-    appearance:none;
-    width:22px;height:22px;
-    flex:0 0 auto;
-    border:none;
-    border-radius:50%;
-    padding:0;
-    background:none;
-    cursor:pointer;
-    box-shadow:0 0 0 2px rgba(255,255,255,0.18) inset;
-  }
-  .legend-color::-webkit-color-swatch-wrapper{padding:0;border-radius:50%;}
-  .legend-color::-webkit-color-swatch{border:none;border-radius:50%;}
-  .legend-color::-moz-color-swatch{border:none;border-radius:50%;}
-  .legend-color:hover{box-shadow:0 0 0 2px var(--trace) inset;}
+  .legend-row-top{display:flex;align-items:center;gap:8px;}
   .legend-num{
     font-family:var(--mono);font-size:12px;color:var(--text);
     flex:0 0 auto;min-width:26px;
   }
+  .palette-row{display:flex;gap:6px;align-items:center;flex:1 1 auto;flex-wrap:wrap;}
+  .palette-swatch{
+    width:18px;height:18px;
+    border-radius:50%;
+    padding:0;
+    border:2px solid rgba(255,255,255,0.15);
+    cursor:pointer;
+    box-shadow:0 1px 3px rgba(0,0,0,0.4);
+  }
+  .palette-swatch:hover{border-color:rgba(255,255,255,0.45);}
+  .palette-swatch.active{border-color:var(--trace); box-shadow:0 0 0 2px rgba(57,217,138,0.35);}
   .legend-input{
-    flex:1 1 auto;
+    width:100%;
     background:var(--bg);
     border:1px solid var(--line);
     border-radius:5px;
@@ -307,7 +376,6 @@
     font-family:var(--sans);
     font-size:13px;
     padding:6px 9px;
-    min-width:0;
   }
   .legend-input:focus{outline:none;border-color:var(--trace);}
   .legend-del{
@@ -334,7 +402,28 @@
     <p class="eyebrow">// Platinen-Analyse</p>
     <h1>Leiterplatten-Scanner</h1>
     <p>Vorder- und Rückseitenfoto hochladen, Kanten prüfen und im Betrachtungsmodus beide Seiten deckungsgleich abgleichen.</p>
+
+    <div class="project-bar">
+      <label for="projectName" class="project-label">Projekt</label>
+      <input type="text" id="projectName" class="project-name-input" placeholder="Projektname eingeben, um zu speichern …" autocomplete="off">
+      <button class="btn ghost" id="newProjectBtn" title="Neues, leeres Projekt anlegen">Neu</button>
+      <select id="projectSelect" class="project-select" title="Gespeichertes Projekt öffnen">
+        <option value="">Gespeicherte Projekte …</option>
+      </select>
+      <button class="btn ghost" id="deleteProjectBtn" title="Ausgewähltes Projekt löschen">Löschen</button>
+    </div>
+    <p class="project-hint">Alle Eingaben werden unter dem Projektnamen im lokalen Speicher dieses Browsers abgelegt. Ohne Namen wird nichts gespeichert.</p>
   </header>
+
+  <div class="modal-overlay hidden" id="confirmOverlay">
+    <div class="modal-box">
+      <p class="modal-message" id="confirmMessage"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="confirmCancelBtn">Abbrechen</button>
+        <button class="btn primary" id="confirmOkBtn">Bestätigen</button>
+      </div>
+    </div>
+  </div>
 
   <div class="tabs">
     <button class="tab active" id="tabUpload">1 · Hochladen</button>
@@ -397,6 +486,10 @@
       <button class="btn ghost" id="zoomIn" title="Vergrößern">+</button>
       <button class="btn ghost" id="zoomReset">Zurücksetzen</button>
     </div>
+    <div class="color-bar">
+      <span class="color-bar-label">Markierungsfarbe:</span>
+      <div class="palette-row" id="colorSwatches"></div>
+    </div>
     <div class="view-wrap">
       <div class="view-col">
         <h3>Vorderseite</h3>
@@ -407,7 +500,7 @@
         <canvas id="viewBack"></canvas>
       </div>
     </div>
-    <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert. Mausrad zum Zoomen, bei Vergrößerung Bild zum Verschieben ziehen. Klick setzt eine nummerierte Markierung, deren Farbe in der Legende per Klick auf den Farbkreis angepasst werden kann.</p>
+    <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert. Mausrad zum Zoomen, bei Vergrößerung Bild zum Verschieben ziehen. Klick setzt eine nummerierte Markierung in der oben gewählten Farbe; die Farbe lässt sich in der Legende jederzeit über dieselbe Palette ändern.</p>
 
     <div class="legend-panel">
       <h3>Legende</h3>
@@ -430,16 +523,23 @@
   const PREVIEW_MAX = 380;     // Anzeige-Breite der Vorschau-Canvas
   const CROP_MAX_DIM = 1000;   // Max. Pixelgröße des Zuschnitts
   const ASPECT_MAX_DIFF = 0.08; // 8% erlaubte Abweichung des Seitenverhältnisses
+  const STORAGE_IMG_MAX_DIM = 1000; // Max. Pixelgröße der im localStorage abgelegten Fotos
+  const PROJECT_PREFIX = 'pcbScanProjekt::';
+  const LAST_PROJECT_KEY = 'pcbScanLetztesProjekt';
 
   const state = {
     front: { workCanvas:null, corners:null, resultCanvas:null, confirmed:false, dispScale:1, dragAttached:false },
     back:  { workCanvas:null, corners:null, resultCanvas:null, confirmed:false, dispScale:1, dragAttached:false }
   };
   let viewReady = false;
+  let currentProjectName = '';
+  let currentProjectKey = null;
+  let saveDebounceTimer = null;
 
   const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
   const $ = id => document.getElementById(id);
   const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+  const escapeHtml = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   /* ---------------------------------------------------------------- */
   /* Bild laden                                                        */
@@ -457,6 +557,15 @@
       };
       reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden.'));
       reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImageFromDataUrl(dataUrl){
+    return new Promise((resolve, reject)=>{
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Bild aus gespeichertem Projekt konnte nicht geladen werden.'));
+      img.src = dataUrl;
     });
   }
 
@@ -888,7 +997,7 @@
       updateMagnifier(side, st.corners[dragIdx].x, st.corners[dragIdx].y);
     };
     const up = () => {
-      if(dragIdx!==-1){ dragIdx = -1; hideMagnifier(side); }
+      if(dragIdx!==-1){ dragIdx = -1; hideMagnifier(side); scheduleSave(); }
     };
 
     c.addEventListener('mousedown', down);
@@ -941,6 +1050,7 @@
       renderOriginalPreview(side);
       updateStatus(side, 'Kanten automatisch erkannt — bei Bedarf Eckpunkte per Ziehen korrigieren, dann Zuschnitt übernehmen.');
       $('goToView').classList.add('hidden');
+      scheduleSave();
     } catch(err){
       updateStatus(side, 'Fehler: ' + err.message);
     }
@@ -978,6 +1088,7 @@
     updateStatus(side, 'Kanten erneut erkannt.');
     hideUploadError();
     $('goToView').classList.add('hidden');
+    scheduleSave();
   }
 
   function confirmCrop(side){
@@ -1000,6 +1111,7 @@
     renderResultPreview(side);
     updateStatus(side, `Zuschnitt übernommen (${outW}×${outH}px).`, true);
     checkBothSidesAndAspect();
+    scheduleSave();
   }
 
   function checkBothSidesAndAspect(){
@@ -1045,7 +1157,9 @@
   const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
 
   // Markierungen: Position (x,y) immer in Vorderseiten-Bildkoordinaten (0..1) gespeichert.
-  const MARKER_COLORS = ['#ff6b5e','#4ea1ff','#ffd23f','#c77dff','#39d98a','#ff8fc7','#3ddbd9','#f2f2f2'];
+  // Feste Farbpalette für Markierungen (Voreinstellung und nachträgliche Änderung nutzen dieselbe Palette).
+  const PALETTE = ['#e63946','#111111','#808080','#ffd23f','#3a86ff','#2ec4b6','#fb8500','#ffffff'];
+  let currentMarkerColor = PALETTE[0];
   let markers = [];
   let nextMarkerNumber = 1;
 
@@ -1054,6 +1168,34 @@
     const r = parseInt(v.substr(0,2),16), g = parseInt(v.substr(2,2),16), b = parseInt(v.substr(4,2),16);
     return `rgba(${r},${g},${b},${alpha})`;
   }
+
+  // Baut eine Reihe klickbarer Farb-Swatches; onSelect wird ohne Bestätigungsbutton sofort beim Klick ausgelöst.
+  function buildPaletteEl(activeColor, onSelect){
+    const wrap = document.createElement('div');
+    wrap.className = 'palette-row';
+    PALETTE.forEach(color=>{
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'palette-swatch';
+      btn.dataset.color = color;
+      btn.style.background = color;
+      btn.title = color;
+      if(color.toLowerCase() === (activeColor||'').toLowerCase()) btn.classList.add('active');
+      btn.addEventListener('click', () => {
+        Array.from(wrap.children).forEach(b => b.classList.toggle('active', b.dataset.color.toLowerCase()===color.toLowerCase()));
+        onSelect(color);
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
+
+  function renderColorBar(){
+    const container = $('colorSwatches');
+    container.innerHTML = '';
+    container.appendChild(buildPaletteEl(currentMarkerColor, color => { currentMarkerColor = color; }));
+  }
+  renderColorBar();
 
   function clampViewCenter(){
     const vis = 1/viewState.zoom;
@@ -1153,16 +1295,17 @@
 
   function createMarker(frontX, frontY){
     const number = nextMarkerNumber++;
-    const color = MARKER_COLORS[(number-1) % MARKER_COLORS.length];
-    markers.push({ id:'m'+number, number, color, x:frontX, y:frontY, label:'' });
+    markers.push({ id:'m'+number, number, color: currentMarkerColor, x:frontX, y:frontY, label:'' });
     renderLegend(true);
     redrawView();
+    scheduleSave();
   }
 
   function deleteMarker(id){
     markers = markers.filter(m => m.id !== id);
     renderLegend();
     redrawView();
+    scheduleSave();
   }
 
   function highlightLegendRow(id){
@@ -1183,26 +1326,18 @@
       row.className = 'legend-row';
       row.dataset.markerId = m.id;
 
-      const colorPicker = document.createElement('input');
-      colorPicker.type = 'color';
-      colorPicker.className = 'legend-color';
-      colorPicker.title = 'Farbe ändern';
-      colorPicker.value = m.color;
-      colorPicker.addEventListener('input', () => {
-        m.color = colorPicker.value;
-        redrawView();
-      });
+      const top = document.createElement('div');
+      top.className = 'legend-row-top';
 
       const num = document.createElement('span');
       num.className = 'legend-num';
       num.textContent = '#' + m.number;
 
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'legend-input';
-      input.placeholder = 'Beschreibung …';
-      input.value = m.label;
-      input.addEventListener('input', () => { m.label = input.value; });
+      const palette = buildPaletteEl(m.color, color => {
+        m.color = color;
+        redrawView();
+        scheduleSave();
+      });
 
       const del = document.createElement('button');
       del.className = 'legend-del';
@@ -1210,7 +1345,16 @@
       del.textContent = '×';
       del.addEventListener('click', () => deleteMarker(m.id));
 
-      row.append(colorPicker, num, input, del);
+      top.append(num, palette, del);
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'legend-input';
+      input.placeholder = 'Beschreibung …';
+      input.value = m.label;
+      input.addEventListener('input', () => { m.label = input.value; scheduleSave(); });
+
+      row.append(top, input);
       list.appendChild(row);
     });
     if(focusLast && markers.length){
@@ -1239,13 +1383,16 @@
     createMarker(clamp(frontX,0,1), clamp(frontY,0,1));
   }
 
-  function enterViewMode(){
+  function enterViewMode(opts){
+    opts = opts || {};
     const ratio = state.front.resultCanvas.width / state.front.resultCanvas.height;
     const dw = Math.min(460, state.front.resultCanvas.width);
     const dh = Math.round(dw/ratio);
     viewState.zoom = 1; viewState.centerX = 0.5; viewState.centerY = 0.5;
-    markers = []; nextMarkerNumber = 1;
-    renderLegend();
+    if(opts.resetMarkers !== false){
+      markers = []; nextMarkerNumber = 1;
+      renderLegend();
+    }
     ['front','back'].forEach(side=>{
       const c = $('view'+cap(side));
       c.width = dw; c.height = dh;
@@ -1369,6 +1516,244 @@
   $('zoomReset').addEventListener('click', () => setZoom(1, {frontX:0.5, y:0.5}));
 
   /* ---------------------------------------------------------------- */
+  /* Projekt-Speicherung (localStorage)                                 */
+  /* ---------------------------------------------------------------- */
+
+  const projectKeyFor = name => PROJECT_PREFIX + name;
+
+  function listSavedProjects(){
+    const out = [];
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(PROJECT_PREFIX)===0) out.push(k.slice(PROJECT_PREFIX.length));
+    }
+    return out.sort((a,b)=>a.localeCompare(b,'de'));
+  }
+
+  function refreshProjectSelect(){
+    const sel = $('projectSelect');
+    const names = listSavedProjects();
+    sel.innerHTML = '<option value="">Gespeicherte Projekte …</option>' +
+      names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    sel.value = names.includes(currentProjectName) ? currentProjectName : '';
+  }
+
+  // Speichert die Arbeitskopie (nicht die volle Auflösung) plus Eckpunkte, damit der
+  // Zuschnitt nach dem Wiederherstellen weiter angepasst werden kann.
+  function serializeSide(side){
+    const st = state[side];
+    if(!st.workCanvas) return null;
+    const scale = Math.min(1, STORAGE_IMG_MAX_DIM / Math.max(st.workCanvas.width, st.workCanvas.height));
+    const store = document.createElement('canvas');
+    store.width = Math.max(1, Math.round(st.workCanvas.width*scale));
+    store.height = Math.max(1, Math.round(st.workCanvas.height*scale));
+    store.getContext('2d').drawImage(st.workCanvas, 0, 0, store.width, store.height);
+    return {
+      workImage: store.toDataURL('image/jpeg', 0.82),
+      workWidth: store.width,
+      workHeight: store.height,
+      corners: st.corners ? st.corners.map(p => ({x:p.x*scale, y:p.y*scale})) : null,
+      confirmed: !!st.confirmed
+    };
+  }
+
+  function buildProjectPayload(){
+    return {
+      version: 1,
+      name: currentProjectName,
+      savedAt: new Date().toISOString(),
+      front: serializeSide('front'),
+      back: serializeSide('back'),
+      markers: markers.map(m => ({ id:m.id, number:m.number, color:m.color, x:m.x, y:m.y, label:m.label })),
+      nextMarkerNumber,
+      currentMarkerColor
+    };
+  }
+
+  function saveCurrentProject(){
+    if(!currentProjectName) return;
+    const key = projectKeyFor(currentProjectName);
+    try{
+      const payload = buildProjectPayload();
+      localStorage.setItem(key, JSON.stringify(payload));
+      currentProjectKey = key;
+      localStorage.setItem(LAST_PROJECT_KEY, currentProjectName);
+      refreshProjectSelect();
+    } catch(err){
+      showUploadError('Speichern im lokalen Speicher fehlgeschlagen (evtl. ist der Speicherplatz des Browsers voll): ' + err.message);
+    }
+  }
+
+  function scheduleSave(){
+    clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = setTimeout(saveCurrentProject, 400);
+  }
+
+  function resetSideState(side){
+    const st = state[side];
+    st.workCanvas = null;
+    st.corners = null;
+    st.resultCanvas = null;
+    st.confirmed = false;
+    $('dropzone'+cap(side)).classList.remove('has-image');
+    $('canvas'+cap(side)+'Result').style.display = 'none';
+    const origC = $('canvas'+cap(side)+'Orig');
+    origC.getContext('2d').clearRect(0,0,origC.width,origC.height);
+    updateStatus(side, '');
+    hideMagnifier(side);
+  }
+
+  function resetAllState(){
+    resetSideState('front');
+    resetSideState('back');
+    markers = []; nextMarkerNumber = 1; currentMarkerColor = PALETTE[0];
+    renderColorBar();
+    renderLegend();
+    viewState.zoom = 1; viewState.centerX = 0.5; viewState.centerY = 0.5;
+    hideUploadError();
+    $('goToView').classList.add('hidden');
+  }
+
+  async function loadProject(name){
+    const key = projectKeyFor(name);
+    const raw = localStorage.getItem(key);
+    if(raw===null) return;
+    let data;
+    try{ data = JSON.parse(raw); }
+    catch(err){ showUploadError(`Projekt „${name}“ konnte nicht gelesen werden (beschädigte Daten).`); return; }
+
+    resetAllState();
+    currentProjectName = name;
+    currentProjectKey = key;
+    $('projectName').value = name;
+
+    for(const side of ['front','back']){
+      const sd = data[side];
+      if(!sd) continue;
+      try{
+        const img = await loadImageFromDataUrl(sd.workImage);
+        const work = document.createElement('canvas');
+        work.width = sd.workWidth; work.height = sd.workHeight;
+        work.getContext('2d').drawImage(img, 0, 0, work.width, work.height);
+        state[side].workCanvas = work;
+        state[side].corners = sd.corners;
+        state[side].confirmed = false;
+        $('dropzone'+cap(side)).classList.add('has-image');
+        renderOriginalPreview(side);
+        if(sd.confirmed){
+          confirmCrop(side);
+        } else {
+          updateStatus(side, 'Aus gespeichertem Projekt geladen — Kanten ggf. anpassen und Zuschnitt übernehmen.');
+        }
+      } catch(err){
+        updateStatus(side, 'Fehler beim Laden: ' + err.message);
+      }
+    }
+
+    markers = (data.markers||[]).map(m => ({ id:m.id, number:m.number, color:m.color, x:m.x, y:m.y, label:m.label||'' }));
+    nextMarkerNumber = data.nextMarkerNumber || (markers.reduce((mx,m)=>Math.max(mx,m.number),0)+1);
+    currentMarkerColor = data.currentMarkerColor || PALETTE[0];
+    renderColorBar();
+    renderLegend();
+
+    refreshProjectSelect();
+    localStorage.setItem(LAST_PROJECT_KEY, name);
+
+    if(state.front.confirmed && state.back.confirmed){
+      enterViewMode({resetMarkers:false});
+    } else {
+      switchTab('upload');
+    }
+  }
+
+  function deleteProject(name){
+    localStorage.removeItem(projectKeyFor(name));
+    if(currentProjectName === name){
+      currentProjectName = '';
+      currentProjectKey = null;
+      $('projectName').value = '';
+      if(localStorage.getItem(LAST_PROJECT_KEY) === name) localStorage.removeItem(LAST_PROJECT_KEY);
+    }
+    refreshProjectSelect();
+  }
+
+  // Eigener Bestätigungsdialog statt window.confirm() (in eingebetteten Vorschauen
+  // wird der native Browser-Dialog teils stillschweigend blockiert).
+  function showConfirm(message){
+    return new Promise(resolve => {
+      const overlay = $('confirmOverlay');
+      $('confirmMessage').textContent = message;
+      overlay.classList.remove('hidden');
+      const okBtn = $('confirmOkBtn'), cancelBtn = $('confirmCancelBtn');
+      const cleanup = result => {
+        overlay.classList.add('hidden');
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onOverlayClick);
+        resolve(result);
+      };
+      const onOk = () => cleanup(true);
+      const onCancel = () => cleanup(false);
+      const onOverlayClick = e => { if(e.target === overlay) cleanup(false); };
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      overlay.addEventListener('click', onOverlayClick);
+    });
+  }
+
+  async function handleProjectNameChange(newNameRaw){
+    const newName = (newNameRaw||'').trim();
+    if(newName === currentProjectName){ $('projectName').value = currentProjectName; return; }
+
+    if(newName && listSavedProjects().includes(newName) && newName !== currentProjectName){
+      const overwrite = await showConfirm(`Es existiert bereits ein Projekt „${newName}“. Soll es mit dem aktuellen Stand überschrieben werden?`);
+      if(!overwrite){ $('projectName').value = currentProjectName; return; }
+    }
+
+    const oldKey = currentProjectKey;
+    const oldName = currentProjectName;
+    currentProjectName = newName;
+    $('projectName').value = newName;
+
+    if(newName){
+      saveCurrentProject();
+      if(oldKey && oldKey !== projectKeyFor(newName)) localStorage.removeItem(oldKey);
+    } else {
+      currentProjectKey = null;
+      if(localStorage.getItem(LAST_PROJECT_KEY) === oldName) localStorage.removeItem(LAST_PROJECT_KEY);
+    }
+    refreshProjectSelect();
+  }
+
+  function newProject(){
+    clearTimeout(saveDebounceTimer);
+    resetAllState();
+    currentProjectName = '';
+    currentProjectKey = null;
+    $('projectName').value = '';
+    refreshProjectSelect();
+    viewReady = false;
+    $('tabView').disabled = true;
+    switchTab('upload');
+    $('projectName').focus();
+  }
+
+  $('projectName').addEventListener('change', e => handleProjectNameChange(e.target.value));
+  $('projectName').addEventListener('keydown', e => { if(e.key==='Enter') e.target.blur(); });
+  $('newProjectBtn').addEventListener('click', () => newProject());
+  $('projectSelect').addEventListener('change', e => {
+    const name = e.target.value;
+    if(!name) return;
+    loadProject(name).catch(err => showUploadError('Laden fehlgeschlagen: ' + err.message));
+  });
+  $('deleteProjectBtn').addEventListener('click', async () => {
+    const name = $('projectSelect').value || currentProjectName;
+    if(!name) return;
+    const ok = await showConfirm(`Projekt „${name}“ wirklich endgültig löschen?`);
+    if(ok) deleteProject(name);
+  });
+
+  /* ---------------------------------------------------------------- */
   /* Tabs & Events                                                      */
   /* ---------------------------------------------------------------- */
 
@@ -1391,10 +1776,16 @@
   $('redoBack').addEventListener('click', () => redoDetection('back'));
   $('confirmFront').addEventListener('click', () => confirmCrop('front'));
   $('confirmBack').addEventListener('click', () => confirmCrop('back'));
-  $('goToView').addEventListener('click', enterViewMode);
+  $('goToView').addEventListener('click', () => enterViewMode());
   $('backToUpload').addEventListener('click', () => switchTab('upload'));
   $('tabUpload').addEventListener('click', () => switchTab('upload'));
   $('tabView').addEventListener('click', () => switchTab('view'));
+
+  refreshProjectSelect();
+  const lastProject = localStorage.getItem(LAST_PROJECT_KEY);
+  if(lastProject && listSavedProjects().includes(lastProject)){
+    loadProject(lastProject).catch(err => console.error('Projekt konnte nicht automatisch geladen werden:', err));
+  }
 
 })();
 </script>
