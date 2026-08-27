@@ -115,6 +115,62 @@
   }
   .modal-actions{display:flex;justify-content:flex-end;gap:10px;}
 
+  .project-bar-secondary{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    margin-top:10px;
+  }
+  .import-status{
+    font-family:var(--mono);font-size:11.5px;color:var(--trace);
+    margin:8px 0 0;min-height:14px;
+    opacity:0;transition:opacity .3s;
+  }
+  .import-status.visible{opacity:1;}
+
+  .modal-box.import-modal-box{max-width:460px;}
+  .modal-box h3{
+    margin:0 0 12px;
+    font-family:var(--mono);font-size:14px;
+    text-transform:uppercase;letter-spacing:.06em;
+    color:var(--text);
+  }
+  .import-select-all{
+    display:flex;align-items:center;gap:8px;
+    margin-bottom:10px;
+    color:var(--muted);font-family:var(--mono);font-size:11px;
+  }
+  .link-btn{
+    background:none;border:none;padding:0;
+    color:var(--trace);font-family:var(--mono);font-size:11px;
+    text-decoration:underline;cursor:pointer;
+  }
+  .import-list{
+    display:flex;flex-direction:column;gap:8px;
+    max-height:300px;overflow-y:auto;
+    margin-bottom:16px;
+  }
+  .import-row{
+    display:flex;align-items:center;gap:10px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:8px 10px;
+    cursor:pointer;
+    font-size:13.5px;color:var(--text);
+  }
+  .import-row input[type="checkbox"]{
+    accent-color:var(--trace);
+    width:16px;height:16px;flex:0 0 auto;
+  }
+  .import-row-name{flex:1 1 auto;font-family:var(--sans);}
+  .import-row-warn{
+    font-family:var(--mono);font-size:10px;color:var(--copper);
+    flex:0 0 auto;white-space:nowrap;
+  }
+  .import-empty{
+    color:#526056;font-family:var(--mono);font-size:12px;
+    text-align:center;margin:0 0 16px;
+  }
+
   .tabs{display:flex;gap:2px;margin:26px 0 22px;border-bottom:1px solid var(--line);}
   .tab{
     font-family:var(--mono);
@@ -431,6 +487,13 @@
       <button class="btn ghost" id="deleteProjectBtn" title="Ausgewähltes Projekt löschen">Löschen</button>
     </div>
     <p class="project-hint">Alle Eingaben werden unter dem Projektnamen im lokalen Speicher dieses Browsers abgelegt. Ohne Namen wird nichts gespeichert.</p>
+
+    <div class="project-bar-secondary">
+      <button class="btn ghost" id="exportProjectsBtn">⬇ Alle Projekte exportieren</button>
+      <button class="btn ghost" id="importProjectsBtn">⬆ Projekte importieren</button>
+      <input type="file" id="importProjectsInput" accept="application/json,.json" style="display:none">
+    </div>
+    <p class="import-status" id="importStatus"></p>
   </header>
 
   <div class="modal-overlay hidden" id="confirmOverlay">
@@ -439,6 +502,22 @@
       <div class="modal-actions">
         <button class="btn ghost" id="confirmCancelBtn">Abbrechen</button>
         <button class="btn primary" id="confirmOkBtn">Bestätigen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="importOverlay">
+    <div class="modal-box import-modal-box">
+      <h3>Projekte aus Datei importieren</h3>
+      <div class="import-select-all">
+        <button type="button" class="link-btn" id="importSelectAllBtn">Alle auswählen</button>
+        <span>·</span>
+        <button type="button" class="link-btn" id="importSelectNoneBtn">Keine auswählen</button>
+      </div>
+      <div class="import-list" id="importList"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="importCancelBtn">Abbrechen</button>
+        <button class="btn primary" id="importConfirmBtn">Ausgewählte importieren</button>
       </div>
     </div>
   </div>
@@ -1800,6 +1879,138 @@
     if(!name) return;
     const ok = await showConfirm(`Projekt „${name}“ wirklich endgültig löschen?`);
     if(ok) deleteProject(name);
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* Export/Import aller Projekte                                       */
+  /* ---------------------------------------------------------------- */
+
+  function showImportStatus(msg){
+    const el = $('importStatus');
+    el.textContent = msg;
+    el.classList.add('visible');
+    clearTimeout(showImportStatus._t);
+    showImportStatus._t = setTimeout(() => el.classList.remove('visible'), 6000);
+  }
+
+  function exportAllProjects(){
+    const names = listSavedProjects();
+    if(names.length===0){
+      showUploadError('Es sind keine Projekte gespeichert, die exportiert werden könnten.');
+      return;
+    }
+    const projects = {};
+    names.forEach(n=>{
+      const raw = localStorage.getItem(projectKeyFor(n));
+      if(raw){
+        try{ projects[n] = JSON.parse(raw); } catch(err){ /* beschädigten Eintrag überspringen */ }
+      }
+    });
+    const payload = {
+      type: 'pcb-scan-projekte-export',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      projects
+    };
+    const blob = new Blob([JSON.stringify(payload)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `platinen-projekte_${payload.exportedAt.replace(/[:.]/g,'-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showImportStatus(`${Object.keys(projects).length} Projekt(e) exportiert.`);
+  }
+
+  // Zeigt eine Auswahlliste der in der Datei enthaltenen Projekte; löst mit den
+  // ausgewählten Namen auf, oder mit null bei Abbruch.
+  function openImportSelection(projectNames, existingNames){
+    return new Promise(resolve => {
+      const overlay = $('importOverlay');
+      const list = $('importList');
+      list.innerHTML = '';
+      projectNames.forEach(name=>{
+        const row = document.createElement('label');
+        row.className = 'import-row';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = true;
+        cb.value = name;
+        const span = document.createElement('span');
+        span.className = 'import-row-name';
+        span.textContent = name;
+        row.append(cb, span);
+        if(existingNames.has(name)){
+          const warn = document.createElement('span');
+          warn.className = 'import-row-warn';
+          warn.textContent = 'überschreibt vorhandenes Projekt';
+          row.appendChild(warn);
+        }
+        list.appendChild(row);
+      });
+      overlay.classList.remove('hidden');
+      const okBtn = $('importConfirmBtn'), cancelBtn = $('importCancelBtn');
+      const cleanup = result => {
+        overlay.classList.add('hidden');
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onOverlayClick);
+        resolve(result);
+      };
+      const onOk = () => {
+        const selected = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+        cleanup(selected);
+      };
+      const onCancel = () => cleanup(null);
+      const onOverlayClick = e => { if(e.target===overlay) cleanup(null); };
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      overlay.addEventListener('click', onOverlayClick);
+    });
+  }
+
+  async function handleImportFile(file){
+    let data;
+    try{
+      const text = await file.text();
+      data = JSON.parse(text);
+    } catch(err){
+      showUploadError('Die Datei konnte nicht gelesen werden — ist es eine gültige Export-Datei?');
+      return;
+    }
+    if(!data || typeof data.projects !== 'object' || data.projects===null || Array.isArray(data.projects)){
+      showUploadError('Die Datei enthält kein gültiges Platinen-Analyse-Projekte-Export-Format.');
+      return;
+    }
+    const names = Object.keys(data.projects);
+    if(names.length===0){
+      showUploadError('Die Datei enthält keine Projekte.');
+      return;
+    }
+    const existing = new Set(listSavedProjects());
+    const selected = await openImportSelection(names, existing);
+    if(!selected || selected.length===0) return;
+    selected.forEach(name => {
+      localStorage.setItem(projectKeyFor(name), JSON.stringify(data.projects[name]));
+    });
+    refreshProjectSelect();
+    showImportStatus(`${selected.length} von ${names.length} Projekt(en) importiert.`);
+  }
+
+  $('exportProjectsBtn').addEventListener('click', exportAllProjects);
+  $('importProjectsBtn').addEventListener('click', () => $('importProjectsInput').click());
+  $('importProjectsInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if(file) handleImportFile(file);
+    e.target.value = '';
+  });
+  $('importSelectAllBtn').addEventListener('click', () => {
+    $('importList').querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+  });
+  $('importSelectNoneBtn').addEventListener('click', () => {
+    $('importList').querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
   });
 
   /* ---------------------------------------------------------------- */
