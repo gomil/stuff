@@ -317,6 +317,24 @@
     font-family:var(--mono);font-size:12px;color:var(--muted);
   }
   .color-bar .palette-swatch{width:22px;height:22px;}
+
+  .opacity-bar{
+    display:flex;align-items:center;justify-content:center;gap:12px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }
+  .opacity-label{
+    font-family:var(--mono);font-size:12px;color:var(--muted);
+  }
+  .opacity-slider{
+    width:180px;
+    accent-color:var(--trace);
+    cursor:pointer;
+  }
+  .opacity-value{
+    font-family:var(--mono);font-size:12px;color:var(--text);
+    min-width:40px;text-align:center;
+  }
   .view-note{
     text-align:center;color:var(--muted);font-size:12.5px;margin-top:18px;font-family:var(--mono);
   }
@@ -489,6 +507,11 @@
     <div class="color-bar">
       <span class="color-bar-label">Markierungsfarbe:</span>
       <div class="palette-row" id="colorSwatches"></div>
+    </div>
+    <div class="opacity-bar">
+      <span class="opacity-label">Deckkraft der Markierungen:</span>
+      <input type="range" id="markerOpacity" class="opacity-slider" min="0" max="100" value="70">
+      <span class="opacity-value" id="opacityValue">70%</span>
     </div>
     <div class="view-wrap">
       <div class="view-col">
@@ -1160,6 +1183,7 @@
   // Feste Farbpalette für Markierungen (Voreinstellung und nachträgliche Änderung nutzen dieselbe Palette).
   const PALETTE = ['#e63946','#111111','#808080','#ffd23f','#3a86ff','#2ec4b6','#fb8500','#ffffff'];
   let currentMarkerColor = PALETTE[0];
+  let markerOpacity = 0.7; // 0..1, per Slider einstellbar
   let markers = [];
   let nextMarkerNumber = 1;
 
@@ -1197,6 +1221,18 @@
   }
   renderColorBar();
 
+  function updateOpacityUI(){
+    $('markerOpacity').value = Math.round(markerOpacity*100);
+    $('opacityValue').textContent = Math.round(markerOpacity*100) + '%';
+  }
+  updateOpacityUI();
+  $('markerOpacity').addEventListener('input', e => {
+    markerOpacity = clamp(Number(e.target.value)/100, 0, 1);
+    updateOpacityUI();
+    redrawView();
+    scheduleSave();
+  });
+
   function clampViewCenter(){
     const vis = 1/viewState.zoom;
     viewState.centerX = clamp(viewState.centerX, vis/2, 1-vis/2);
@@ -1213,8 +1249,9 @@
 
   function drawPersistentMarker(ctx, x, y, marker){
     ctx.save();
+    ctx.globalAlpha = markerOpacity;
     ctx.beginPath(); ctx.arc(x,y,11,0,Math.PI*2);
-    ctx.fillStyle = hexToRgba(marker.color, 0.55);
+    ctx.fillStyle = marker.color;
     ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = marker.color; ctx.stroke();
     ctx.font = 'bold 11px monospace';
@@ -1566,7 +1603,8 @@
       back: serializeSide('back'),
       markers: markers.map(m => ({ id:m.id, number:m.number, color:m.color, x:m.x, y:m.y, label:m.label })),
       nextMarkerNumber,
-      currentMarkerColor
+      currentMarkerColor,
+      markerOpacity
     };
   }
 
@@ -1606,8 +1644,9 @@
   function resetAllState(){
     resetSideState('front');
     resetSideState('back');
-    markers = []; nextMarkerNumber = 1; currentMarkerColor = PALETTE[0];
+    markers = []; nextMarkerNumber = 1; currentMarkerColor = PALETTE[0]; markerOpacity = 0.7;
     renderColorBar();
+    updateOpacityUI();
     renderLegend();
     viewState.zoom = 1; viewState.centerX = 0.5; viewState.centerY = 0.5;
     hideUploadError();
@@ -1653,7 +1692,9 @@
     markers = (data.markers||[]).map(m => ({ id:m.id, number:m.number, color:m.color, x:m.x, y:m.y, label:m.label||'' }));
     nextMarkerNumber = data.nextMarkerNumber || (markers.reduce((mx,m)=>Math.max(mx,m.number),0)+1);
     currentMarkerColor = data.currentMarkerColor || PALETTE[0];
+    markerOpacity = (typeof data.markerOpacity === 'number') ? clamp(data.markerOpacity, 0, 1) : 0.7;
     renderColorBar();
+    updateOpacityUI();
     renderLegend();
 
     refreshProjectSelect();
@@ -1725,7 +1766,15 @@
     refreshProjectSelect();
   }
 
-  function newProject(){
+  function hasUnsavedWork(){
+    return !currentProjectName && (!!state.front.workCanvas || !!state.back.workCanvas || markers.length>0);
+  }
+
+  async function newProject(){
+    if(hasUnsavedWork()){
+      const ok = await showConfirm('Das aktuelle Projekt wurde noch nicht benannt und damit nicht gespeichert. Soll es wirklich verworfen werden?');
+      if(!ok) return;
+    }
     clearTimeout(saveDebounceTimer);
     resetAllState();
     currentProjectName = '';
