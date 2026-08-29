@@ -208,6 +208,18 @@
     display:flex;align-items:center;gap:8px;
   }
   .side-panel h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--copper);display:inline-block;}
+  .side-panel h2 .optional-tag{
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:.05em;
+    text-transform:none;
+    color:var(--muted);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:2px 6px;
+    font-weight:400;
+  }
   .side-panel .hint{color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5;}
 
   input[type=file]{
@@ -399,13 +411,31 @@
   .corner-legend{font-family:var(--mono);font-size:10.5px;color:#5c6f64;margin-top:6px;}
   .corner-legend span.tl{color:var(--pad);}
 
+  .view-layout{
+    display:flex;
+    gap:24px;
+    align-items:flex-start;
+    flex-wrap:wrap;
+  }
+  .view-left{
+    flex:1 1 560px;
+    min-width:0;
+    position:sticky;
+    top:16px;
+  }
+  .view-right{
+    flex:1 1 300px;
+    max-width:360px;
+    min-width:260px;
+  }
+
   .legend-panel{
-    max-width:640px;
-    margin:24px auto 0;
     background:var(--panel);
     border:1px solid var(--line);
     border-radius:10px;
     padding:16px 18px;
+    max-height:calc(100vh - 40px);
+    overflow-y:auto;
   }
   .legend-panel h3{
     font-family:var(--mono);
@@ -548,8 +578,8 @@
       </div>
 
       <div class="side-panel" data-side="back">
-        <h2><span class="dot"></span>Rückseite</h2>
-        <p class="hint">Foto der Lötseite, oberer Bildrand entspricht derselben Platinenkante wie bei der Vorderseite.</p>
+        <h2><span class="dot"></span>Rückseite <span class="optional-tag">optional</span></h2>
+        <p class="hint">Foto der Lötseite, oberer Bildrand entspricht derselben Platinenkante wie bei der Vorderseite. Ohne Foto wird die Rückseite im Betrachten-Modus einfarbig dargestellt.</p>
         <input type="file" accept="image/*" id="fileBack">
         <div class="canvas-wrap dropzone" id="dropzoneBack">
           <canvas id="canvasBackOrig"></canvas>
@@ -592,22 +622,29 @@
       <input type="range" id="markerOpacity" class="opacity-slider" min="0" max="100" value="70">
       <span class="opacity-value" id="opacityValue">70%</span>
     </div>
-    <div class="view-wrap">
-      <div class="view-col">
-        <h3>Vorderseite</h3>
-        <canvas id="viewFront"></canvas>
-      </div>
-      <div class="view-col">
-        <h3>Rückseite</h3>
-        <canvas id="viewBack"></canvas>
-      </div>
-    </div>
-    <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert. Mausrad zum Zoomen, bei Vergrößerung Bild zum Verschieben ziehen. Klick setzt eine nummerierte Markierung in der oben gewählten Farbe; die Farbe lässt sich in der Legende jederzeit über dieselbe Palette ändern.</p>
 
-    <div class="legend-panel">
-      <h3>Legende</h3>
-      <div class="legend-list" id="legendList"></div>
-      <p class="legend-empty" id="legendEmpty">Noch keine Markierungen gesetzt — auf eine Stelle im Vorder- oder Rückseitenbild klicken, um eine Markierung zu setzen.</p>
+    <div class="view-layout">
+      <div class="view-left">
+        <div class="view-wrap">
+          <div class="view-col">
+            <h3>Vorderseite</h3>
+            <canvas id="viewFront"></canvas>
+          </div>
+          <div class="view-col">
+            <h3>Rückseite</h3>
+            <canvas id="viewBack"></canvas>
+          </div>
+        </div>
+        <p class="view-note">Maus über ein Bild bewegen — die gespiegelte Position wird auf der jeweils anderen Seite markiert. Mausrad zum Zoomen, bei Vergrößerung Bild zum Verschieben ziehen. Klick setzt eine nummerierte Markierung in der oben gewählten Farbe; die Farbe lässt sich in der Legende jederzeit über dieselbe Palette ändern.</p>
+      </div>
+
+      <div class="view-right">
+        <div class="legend-panel">
+          <h3>Legende</h3>
+          <div class="legend-list" id="legendList"></div>
+          <p class="legend-empty" id="legendEmpty">Noch keine Markierungen gesetzt — auf eine Stelle im Vorder- oder Rückseitenbild klicken, um eine Markierung zu setzen.</p>
+        </div>
+      </div>
     </div>
 
     <div style="text-align:center" class="back-btn">
@@ -987,13 +1024,31 @@
   /* UI: Vorschau, Overlay, Drag-Handles                                */
   /* ---------------------------------------------------------------- */
 
+  // Ermittelt, wie weit die aktuellen Eckpunkte über das Foto hinausragen (bei starker
+  // Verzerrung/Schräglage), plus einen kleinen festen Puffer — damit die Vorschau immer
+  // genug Rand zeigt, um jeden Korrekturpunkt zu erreichen.
+  function computePadding(side){
+    const st = state[side];
+    const w = st.workCanvas.width, h = st.workCanvas.height;
+    const buffer = 0.045 * Math.max(w,h);
+    let left=buffer, right=buffer, top=buffer, bottom=buffer;
+    st.corners.forEach(c=>{
+      left   = Math.max(left,   buffer - c.x);
+      top    = Math.max(top,    buffer - c.y);
+      right  = Math.max(right,  buffer + (c.x-w));
+      bottom = Math.max(bottom, buffer + (c.y-h));
+    });
+    return { left, top, right, bottom };
+  }
+
   function drawOverlay(side){
     const st = state[side];
     const c = $('canvas'+cap(side)+'Orig');
     const ctx = c.getContext('2d');
+    const s = st.dispScale, pad = st.padding;
     ctx.clearRect(0,0,c.width,c.height);
-    ctx.drawImage(st.workCanvas, 0,0, c.width, c.height);
-    const pts = st.corners.map(p => ({x:p.x*st.dispScale, y:p.y*st.dispScale}));
+    ctx.drawImage(st.workCanvas, pad.left*s, pad.top*s, st.workCanvas.width*s, st.workCanvas.height*s);
+    const pts = st.corners.map(p => ({x:(p.x+pad.left)*s, y:(p.y+pad.top)*s}));
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for(let i=1;i<4;i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -1011,9 +1066,12 @@
   function renderOriginalPreview(side){
     const st = state[side];
     const c = $('canvas'+cap(side)+'Orig');
-    const scale = Math.min(1, PREVIEW_MAX/st.workCanvas.width);
-    c.width = Math.round(st.workCanvas.width*scale);
-    c.height = Math.round(st.workCanvas.height*scale);
+    st.padding = computePadding(side);
+    const virtualW = st.workCanvas.width + st.padding.left + st.padding.right;
+    const virtualH = st.workCanvas.height + st.padding.top + st.padding.bottom;
+    const scale = Math.min(1, PREVIEW_MAX/Math.max(virtualW, virtualH));
+    c.width = Math.round(virtualW*scale);
+    c.height = Math.round(virtualH*scale);
     st.dispScale = scale;
     drawOverlay(side);
     attachDragHandlers(side);
@@ -1078,7 +1136,8 @@
     };
     const down = e => {
       const p = getPos(e);
-      const pts = st.corners.map(pt => ({x:pt.x*st.dispScale, y:pt.y*st.dispScale}));
+      const s = st.dispScale, pad = st.padding;
+      const pts = st.corners.map(pt => ({x:(pt.x+pad.left)*s, y:(pt.y+pad.top)*s}));
       let min = 1e9, idx = -1;
       pts.forEach((pt,i)=>{ const dd=Math.hypot(pt.x-p.x,pt.y-p.y); if(dd<min){min=dd; idx=i;} });
       if(min < 18){
@@ -1092,14 +1151,20 @@
       if(dragIdx===-1) return;
       e.preventDefault();
       const p = getPos(e);
+      const s = st.dispScale, pad = st.padding;
       const nx = Math.min(c.width, Math.max(0, p.x));
       const ny = Math.min(c.height, Math.max(0, p.y));
-      st.corners[dragIdx] = { x: nx/st.dispScale, y: ny/st.dispScale };
+      st.corners[dragIdx] = { x: nx/s - pad.left, y: ny/s - pad.top };
       drawOverlay(side);
       updateMagnifier(side, st.corners[dragIdx].x, st.corners[dragIdx].y);
     };
     const up = () => {
-      if(dragIdx!==-1){ dragIdx = -1; hideMagnifier(side); scheduleSave(); }
+      if(dragIdx!==-1){
+        dragIdx = -1;
+        hideMagnifier(side);
+        renderOriginalPreview(side); // Rand ggf. neu bemessen, falls Ecke stark verschoben wurde
+        scheduleSave();
+      }
     };
 
     c.addEventListener('mousedown', down);
@@ -1186,7 +1251,7 @@
     state[side].corners = detectCorners(state[side].workCanvas);
     state[side].confirmed = false;
     $('canvas'+cap(side)+'Result').style.display = 'none';
-    drawOverlay(side);
+    renderOriginalPreview(side);
     updateStatus(side, 'Kanten erneut erkannt.');
     hideUploadError();
     $('goToView').classList.add('hidden');
@@ -1216,12 +1281,39 @@
     scheduleSave();
   }
 
+  const PLACEHOLDER_BACK_COLOR = '#3a4a44';
+
+  function createPlaceholderCanvas(width, height, color){
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, width);
+    c.height = Math.max(1, height);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.fillRect(0,0,c.width,c.height);
+    return c;
+  }
+
   function checkBothSidesAndAspect(){
     hideUploadError();
-    if(!(state.front.confirmed && state.back.confirmed)){
+    if(!state.front.confirmed){
       $('goToView').classList.add('hidden');
       return;
     }
+
+    if(!state.back.confirmed){
+      if(state.back.workCanvas){
+        // Rückseite wurde hochgeladen, aber der Zuschnitt noch nicht übernommen
+        $('goToView').classList.add('hidden');
+        return;
+      }
+      // Keine Rückseite hochgeladen — sie wird einfarbig im Seitenverhältnis der Vorderseite dargestellt.
+      state.back.resultCanvas = createPlaceholderCanvas(
+        state.front.resultCanvas.width, state.front.resultCanvas.height, PLACEHOLDER_BACK_COLOR
+      );
+      $('goToView').classList.remove('hidden');
+      return;
+    }
+
     const rF = state.front.resultCanvas.width / state.front.resultCanvas.height;
     const rB = state.back.resultCanvas.width / state.back.resultCanvas.height;
     const diff = Math.abs(rF-rB)/rF;
@@ -1476,7 +1568,7 @@
     if(focusLast && markers.length){
       const lastId = markers[markers.length-1].id;
       const input = document.querySelector(`.legend-row[data-marker-id="${lastId}"] .legend-input`);
-      if(input) input.focus();
+      if(input) input.focus({preventScroll:true});
     }
   }
 
@@ -1779,7 +1871,8 @@
     refreshProjectSelect();
     localStorage.setItem(LAST_PROJECT_KEY, name);
 
-    if(state.front.confirmed && state.back.confirmed){
+    if(state.front.confirmed){
+      checkBothSidesAndAspect();
       enterViewMode({resetMarkers:false});
     } else {
       switchTab('upload');
