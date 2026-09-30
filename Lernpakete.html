@@ -41,6 +41,17 @@ textarea{min-height:110px;font-family:ui-monospace,monospace;font-size:13px}
 .pair{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-bottom:6px}
 .msg{padding:9px 12px;border-radius:10px;background:color-mix(in srgb,var(--pr) 14%,var(--card));margin-bottom:10px}
 .tbl{overflow-x:auto}
+.bridge{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.bh{text-align:center;font-weight:600;margin-bottom:6px}
+.bw{min-height:46px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--bd);background:var(--card);border-radius:10px;cursor:pointer;user-select:none;-webkit-user-select:none;word-break:break-word;display:flex;align-items:center;transition:opacity .4s,transform .4s,border-color .15s,background .15s}
+.bw.empty{visibility:hidden}
+.bw.sel{border-color:var(--pr);background:color-mix(in srgb,var(--pr) 18%,var(--card))}
+.bw.over{border-color:var(--pr);border-style:dashed}
+.bw.gone{opacity:0;transform:scale(.9);pointer-events:none;border-color:var(--ok)}
+.bw.shake{animation:sh .4s;border-color:var(--ko)}
+.bw.fin{animation:fi .5s}
+@keyframes fi{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+@keyframes sh{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 </style>
 </head>
 <body>
@@ -82,7 +93,7 @@ const save=()=>{try{localStorage.setItem(K,JSON.stringify(S.map(pkgOut)))}catch(
 const getDir=p=>dirs[p.id]||p.dir||'both';
 const dirLbl=(p,d)=>d==='f'?`${esc(p.d1)} → ${esc(p.d2)}`:d==='r'?`${esc(p.d2)} → ${esc(p.d1)}`:'Beide';
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-let V='play',sel=new Set(),dirs={},modeOpt='input',msg='',E=null,G=null,armed=null,timer=null,expTxt='',impTxt='';
+let V='play',sel=new Set(),dirs={},modeOpt='input',bridgeN=8,msg='',E=null,G=null,armed=null,timer=null,expTxt='',impTxt='';
 
 /* ---------- Bewertung ---------- */
 function rating(p){
@@ -107,9 +118,11 @@ function playV(){
   let h=msg?`<div class="msg">${msg}</div>`:'';msg='';
   if(!list.length)return h+`<div class="card">Noch keine Lernpakete vorhanden. Lege unter „📚 Verwalten“ ein Paket an oder importiere welche.</div>`;
   h+=`<h2>1. Pakete &amp; Richtung wählen</h2><p class="mu" style="margin-top:-4px">Schwächer bewertete Pakete stehen oben. Die Richtung legst du für jedes gewählte Paket einzeln fest (vorbelegt mit dem Standard des Pakets).</p>`;
-  h+=list.map(p=>{const r=rating(p),on=sel.has(p.id);return `<div class="card"><label class="pkg"><input type="checkbox" data-sel="${p.id}" ${on?'checked':''}>${rate(p)}<span class="grow"><b>${esc(p.title)}</b><br><span class="mu">${esc(p.d1)} ↔ ${esc(p.d2)} · ${p.pairs.length} Paare · ${badge(r)[2]}</span></span><span style="text-align:right">${stars(r)}<br><span class="mu">${r.toFixed(1)} / 5</span></span></label>${on?`<div class="seg" style="margin-top:10px">${['f','r','both'].map(d=>`<button class="${getDir(p)===d?'on':''}" data-act="pdir" data-pk="${p.id}" data-id="${d}">${dirLbl(p,d)}</button>`).join('')}</div>`:''}</div>`}).join('');
-  h+=`<h2>2. Modus</h2><div class="seg">${[['input','⌨️ Eingabe'],['mc','🔘 Multiple Choice']].map(a=>`<button class="${modeOpt===a[0]?'on':''}" data-act="mode" data-id="${a[0]}">${a[1]}</button>`).join('')}</div>`;
-  h+=`<p><button class="p" data-act="start" ${sel.size?'':'disabled'}>Los geht's ▶</button></p>`;
+  h+=list.map(p=>{const r=rating(p),on=sel.has(p.id);return `<div class="card"><label class="pkg"><input type="checkbox" data-sel="${p.id}" ${on?'checked':''}>${rate(p)}<span class="grow"><b>${esc(p.title)}</b><br><span class="mu">${esc(p.d1)} ↔ ${esc(p.d2)} · ${p.pairs.length} Paare · ${badge(r)[2]}</span></span><span style="text-align:right">${stars(r)}<br><span class="mu">${r.toFixed(1)} / 5</span></span></label>${on&&modeOpt!=='bridge'?`<div class="seg" style="margin-top:10px">${['f','r','both'].map(d=>`<button class="${getDir(p)===d?'on':''}" data-act="pdir" data-pk="${p.id}" data-id="${d}">${dirLbl(p,d)}</button>`).join('')}</div>`:''}</div>`}).join('');
+  h+=`<h2>2. Modus</h2><div class="seg">${[['input','⌨️ Eingabe'],['mc','🔘 Multiple Choice'],['bridge','🌉 Wortbrücken']].map(a=>`<button class="${modeOpt===a[0]?'on':''}" data-act="mode" data-id="${a[0]}">${a[1]}</button>`).join('')}</div>`;
+  const total=S.filter(p=>sel.has(p.id)).reduce((n,p)=>n+p.pairs.length,0),low=modeOpt==='bridge'&&total<4;
+  if(modeOpt==='bridge')h+=`<div class="card"><label>Anzahl Paare auf dem Spielfeld: <b id="bnv">${bridgeN}</b><input type="range" id="bn" min="4" max="20" value="${bridgeN}" style="width:100%"></label><span class="mu">Domäne 1 links, Domäne 2 rechts. Die Richtung je Paket spielt hier keine Rolle.</span>${sel.size&&low?'<div class="mu" style="color:var(--ko)">Für Wortbrücken werden mindestens 4 Paare benötigt.</div>':''}</div>`;
+  h+=`<p><button class="p" data-act="start" ${sel.size&&!low?'':'disabled'}>Los geht's ▶</button></p>`;
   return h;
 }
 function manageV(){
@@ -142,6 +155,7 @@ function editV(){
   return h;
 }
 function gameV(){
+  if(G.mode==='bridge')return bridgeV();
   const q=G.cur,st=G.st;
   const from=q.d==='f'?q.p.d1:q.p.d2,to=q.d==='f'?q.p.d2:q.p.d1;
   let h=`<div class="row" style="margin-bottom:10px"><span class="grow mu">✅ ${st.ok} · ❌ ${st.ko}</span><button data-act="end">Beenden</button></div>
@@ -209,6 +223,80 @@ function checkInput(){
   answer(typ.length>0&&typ.every(t=>acc.includes(t)));
 }
 
+/* ---------- Wortbrücken ---------- */
+const shuf=a=>a.map(v=>[Math.random(),v]).sort((x,y)=>x[0]-y[0]).map(x=>x[1]);
+const findB=id=>[...G.left,...G.right].find(i=>i&&i.id==id);
+function pairW(q){return(weight({x:q.x,d:'f'})+weight({x:q.x,d:'r'}))/2}
+function pickPairs(k){
+  const onb=new Set(),L=new Set(),R=new Set(),out=[];
+  G.left.forEach(i=>{if(i){onb.add(i.x);L.add(norm(i.x.a))}});
+  G.right.forEach(i=>{if(i){onb.add(i.x);R.add(norm(i.x.b))}});
+  for(let n=0;n<k;n++){
+    const c=G.pairs.filter(q=>!onb.has(q.x)&&!L.has(norm(q.x.a))&&!R.has(norm(q.x.b)));
+    if(!c.length)break;
+    const w=c.map(pairW);let r=Math.random()*w.reduce((a,b)=>a+b,0),q=c[c.length-1];
+    for(let i=0;i<c.length;i++){r-=w[i];if(r<=0){q=c[i];break}}
+    out.push(q);onb.add(q.x);L.add(norm(q.x.a));R.add(norm(q.x.b));
+  }
+  return out;
+}
+function fillBoard(){
+  const P=pickPairs(G.left.filter(x=>!x).length);
+  const place=(arr,side)=>{const idx=shuf(arr.map((v,i)=>v?-1:i).filter(i=>i>=0));shuf(P).forEach((q,j)=>{arr[idx[j]]={id:G.seq++,p:q.p,x:q.x,side,fresh:true}})};
+  place(G.left,'L');place(G.right,'R');
+}
+function startBridge(){
+  const sp=S.filter(p=>sel.has(p.id)),ps=[];
+  sp.forEach(p=>p.pairs.forEach(x=>ps.push({p,x})));
+  if(ps.length<4)return;
+  const same=sp.every(p=>p.d1===sp[0].d1&&p.d2===sp[0].d2);
+  G={mode:'bridge',pairs:ps,N:Math.min(bridgeN,ps.length),st:{ok:0,ko:0},seq:1,sel:null,h1:same?sp[0].d1:'Domäne 1',h2:same?sp[0].d2:'Domäne 2'};
+  G.left=Array(G.N).fill(null);G.right=Array(G.N).fill(null);
+  fillBoard();V='game';render();
+}
+function bridgeV(){
+  const col=(arr,side)=>arr.map(i=>i?`<div class="bw${i.fresh?' fin':''}${G.sel===i?' sel':''}" draggable="true" data-bw="${i.id}" data-side="${side}">${esc(side==='L'?i.x.a:i.x.b)}</div>`:`<div class="bw empty"></div>`).join('');
+  const h=`<div class="row" style="margin-bottom:8px"><span class="grow mu" id="bcnt">✅ ${G.st.ok} · ❌ ${G.st.ko}</span><button data-act="end">Beenden</button></div>
+  <div class="mu" style="margin-bottom:8px">Ziehe einen Begriff auf seinen Partner auf der anderen Seite – oder tippe beide nacheinander an.</div>
+  <div class="bridge"><div><div class="bh">${esc(G.h1)}</div>${col(G.left,'L')}</div><div><div class="bh">${esc(G.h2)}</div>${col(G.right,'R')}</div></div>
+  ${G.left.every(x=>!x)?'<div class="card">Keine weiteren Begriffe verfügbar – beende die Runde.</div>':''}`;
+  G.left.concat(G.right).forEach(i=>{if(i)i.fresh=false});
+  return h;
+}
+function markSel(){document.querySelectorAll('.bw').forEach(w=>w.classList.toggle('sel',!!G.sel&&G.sel.id==w.dataset.bw))}
+function bridgeClick(id){
+  const it=findB(id);if(!it||it.fading)return;
+  if(!G.sel||G.sel.fading){G.sel=it;markSel()}
+  else if(G.sel===it){G.sel=null;markSel()}
+  else if(G.sel.side===it.side){G.sel=it;markSel()}
+  else{const a=G.sel;G.sel=null;markSel();attempt(a,it)}
+}
+function attempt(a,b){
+  if(a.side===b.side||a.fading||b.fading)return;
+  const g=G,l=a.side==='L'?a:b,r=a.side==='L'?b:a,ok=l.x===r.x;
+  const el=i=>document.querySelector(`[data-bw="${i.id}"]`);
+  if(ok){
+    [l.x.f,l.x.r].forEach(s=>{s[0]++;s[1]++;s[2]=1});g.st.ok++;
+    l.fading=r.fading=true;[l,r].forEach(i=>el(i)&&el(i).classList.add('gone'));
+    setTimeout(()=>{
+      if(G!==g)return;
+      g.left[g.left.indexOf(l)]=null;g.right[g.right.indexOf(r)]=null;
+      if(g.left.filter(x=>!x).length*2>=g.N)fillBoard();
+      render();
+    },450);
+  }else{
+    const f=l.x.f,rr=r.x.r;f[0]++;f[2]=0;rr[0]++;rr[2]=0;g.st.ko++;
+    [l,r].forEach(i=>{const e=el(i);if(e){e.classList.add('shake');setTimeout(()=>e.classList.remove('shake'),450)}});
+  }
+  save();const c=$('#bcnt');if(c)c.textContent=`✅ ${g.st.ok} · ❌ ${g.st.ko}`;
+}
+const bwOf=e=>e.target.closest?e.target.closest('.bw'):null;
+document.addEventListener('dragstart',e=>{const w=bwOf(e);if(!w||!G||G.mode!=='bridge'||w.classList.contains('empty'))return;G.drag=w.dataset.bw;try{e.dataTransfer.setData('text/plain',w.dataset.bw);e.dataTransfer.effectAllowed='move'}catch(x){}});
+document.addEventListener('dragover',e=>{const w=bwOf(e);if(!w||!G||G.mode!=='bridge'||!G.drag||!w.dataset.bw)return;const d=findB(G.drag);if(d&&d.side!==w.dataset.side){e.preventDefault();w.classList.add('over')}});
+document.addEventListener('dragleave',e=>{const w=bwOf(e);if(w)w.classList.remove('over')});
+document.addEventListener('drop',e=>{const w=bwOf(e);if(!w||!G||G.mode!=='bridge'||!G.drag)return;e.preventDefault();const d=findB(G.drag),t=findB(w.dataset.bw);G.drag=null;document.querySelectorAll('.over').forEach(x=>x.classList.remove('over'));if(d&&t)attempt(d,t)});
+document.addEventListener('dragend',()=>{if(G)G.drag=null;document.querySelectorAll('.over').forEach(x=>x.classList.remove('over'))});
+
 /* ---------- Editor-Hilfen ---------- */
 function syncE(){
   if(!E||!$('#t'))return;
@@ -239,6 +327,8 @@ function doImport(text){
 
 /* ---------- Events ---------- */
 document.addEventListener('click',e=>{
+  const w=e.target.closest('.bw');
+  if(w&&w.dataset.bw&&G&&G.mode==='bridge'){bridgeClick(w.dataset.bw);return}
   const b=e.target.closest('[data-act]');if(!b)return;
   const a=b.dataset.act,id=b.dataset.id;
   if(a!=='reset'&&a!=='del')armed=null;
@@ -248,7 +338,7 @@ document.addEventListener('click',e=>{
     case 'pdir':dirs[b.dataset.pk]=id;render();break;
     case 'edir':syncE();E.dir=id;render();break;
     case 'mode':modeOpt=id;render();break;
-    case 'start':{const P=pool();if(!P.length)break;G={pool:P,st:{ok:0,ko:0}};V='game';nextQ();break}
+    case 'start':{if(modeOpt==='bridge'){startBridge();break}const P=pool();if(!P.length)break;G={pool:P,st:{ok:0,ko:0}};V='game';nextQ();break}
     case 'end':{clearTimeout(timer);const s=G.st;G=null;V='play';msg=`Runde beendet: ✅ ${s.ok} richtig, ❌ ${s.ko} falsch.`;render();break}
     case 'opt':{const o=G.opts[+id];answer(o.ok,+id);break}
     case 'next':nextQ();break;
@@ -276,6 +366,7 @@ document.addEventListener('click',e=>{
   }
 });
 document.addEventListener('input',e=>{
+  if(e.target.id==='bn'){bridgeN=+e.target.value;$('#bnv').textContent=bridgeN;return}
   if(e.target.id!=='d1'&&e.target.id!=='d2')return;
   const v1=$('#d1').value,v2=$('#d2').value;
   document.querySelectorAll('.ra').forEach(x=>x.placeholder=v1);
@@ -289,6 +380,7 @@ document.addEventListener('change',e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter')return;
+  if(V==='game'&&G&&G.mode==='bridge')return;
   if(V==='game'&&G){e.preventDefault();
     if(G.done){if(!G.right||true)nextQ()}
     else if(G.mode==='input')checkInput();
