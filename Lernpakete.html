@@ -101,7 +101,7 @@ const save=()=>{try{localStorage.setItem(K,JSON.stringify(S.map(pkgOut)))}catch(
 const getDir=p=>dirs[p.id]||p.dir||'both';
 const dirLbl=(p,d)=>d==='f'?`${esc(p.d1)} → ${esc(p.d2)}`:d==='r'?`${esc(p.d2)} → ${esc(p.d1)}`:'Beide';
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-let V='play',sel=new Set(),dirs={},modeOpt='input',bridgeN=8,infOpt=8,regOpt=3,msg='',E=null,G=null,armed=null,timer=null,expTxt='',impTxt='';
+let V='play',sel=new Set(),dirs={},modeOpt='input',bridgeN=8,infOpt=8,regOpt=3,msg='',E=null,G=null,armed=null,timer=null;
 
 /* ---------- Bewertung ---------- */
 function rating(p){
@@ -143,11 +143,8 @@ function manageV(){
   <button data-act="edit" data-id="${p.id}">✏️ Bearbeiten</button>
   <button data-act="reset" data-id="${p.id}">${armed==='reset'+p.id?'Wirklich?':'↺ Bewertung zurücksetzen'}</button>
   <button class="d" data-act="del" data-id="${p.id}">${armed==='del'+p.id?'Wirklich?':'🗑'}</button></div></div>`).join('');
-  h+=`<h2>Export</h2><p class="mu" style="margin-top:-4px">Häkchen bei den Paketen setzen, Export erzeugen und den Text kopieren oder speichern (inkl. Bewertungen).</p>
-  <div class="row"><button data-act="export">Export erzeugen</button><button data-act="copy">📋 Kopieren</button></div>
-  <textarea id="exp" readonly placeholder="JSON erscheint hier …" style="margin-top:8px">${esc(expTxt)}</textarea>
-  <h2>Import</h2><textarea id="imp" placeholder="JSON hier einfügen …">${esc(impTxt)}</textarea>
-  <div class="row" style="margin-top:8px"><input type="file" id="file" accept=".json,application/json,.txt"><button class="p" data-act="import">Importieren</button></div>`;
+  h+=`<h2>Export &amp; Import</h2><p class="mu" style="margin-top:-4px">Exportiert werden die per Häkchen markierten Pakete inklusive Bewertungen als Datei.</p>
+  <div class="row"><button data-act="export">📤 Exportieren (Datei)</button><label class="btn">📥 Importieren (Datei)<input type="file" id="file" accept=".json,application/json" hidden></label></div>`;
   return h;
 }
 function editV(){
@@ -369,6 +366,19 @@ function saveE(){
   if(old)S[S.indexOf(old)]=p;else S.push(p);
   save();E=null;msg='✅ Lernpaket gespeichert.';V='manage';render();
 }
+async function exportFile(){
+  const ids=[...document.querySelectorAll('[data-exp]:checked')].map(x=>x.dataset.exp);
+  if(!ids.length){msg='⚠️ Bitte mindestens ein Lernpaket zum Export markieren.';render();return}
+  const d=new Date(),z=n=>String(n).padStart(2,'0');
+  const name=`LernPakete-${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}-${z(d.getMinutes())}-${z(d.getSeconds())}.json`;
+  const data=JSON.stringify({format:'lernpakete',version:2,pakete:S.filter(p=>ids.includes(p.id)).map(pkgOut)},null,1);
+  try{
+    const dl=window.claude&&await window.claude.use('downloads');
+    if(dl){await dl.save({filename:name,data});msg=`✅ Export: ${name}`}
+    else{const u=URL.createObjectURL(new Blob([data],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);msg=`✅ Export: ${name}`}
+  }catch(e){msg=e&&e.code==='declined'?'Export abgebrochen.':'⚠️ Export nicht möglich.'}
+  render();
+}
 function doImport(text){
   let j;try{j=JSON.parse(text)}catch(e){msg='⚠️ Kein gültiges JSON.';render();return}
   const arr=Array.isArray(j)?j:(j&&j.pakete)||[];let n=0;
@@ -376,7 +386,7 @@ function doImport(text){
     const np=pkgIn(p);if(!np)return;
     const i=S.findIndex(s=>s.id===np.id);if(i>=0)S[i]=np;else S.push(np);n++;
   });
-  save();impTxt='';msg=n?`✅ ${n} Lernpaket(e) importiert.`:'⚠️ Keine gültigen Lernpakete gefunden.';render();
+  save();msg=n?`✅ ${n} Lernpaket(e) importiert.`:'⚠️ Keine gültigen Lernpakete gefunden.';render();
 }
 
 /* ---------- Events ---------- */
@@ -413,11 +423,7 @@ document.addEventListener('click',e=>{
       E.rows=E.rows.filter(r=>r[0]||r[1]).concat(add);if(!E.rows.length)E.rows=[['','']];render();break}
     case 'saveE':saveE();break;
     case 'cancelE':E=null;V='manage';render();break;
-    case 'export':{const ids=[...document.querySelectorAll('[data-exp]:checked')].map(x=>x.dataset.exp);
-      expTxt=JSON.stringify({format:'lernpakete',version:2,pakete:S.filter(p=>ids.includes(p.id)).map(pkgOut)},null,1);render();break}
-    case 'copy':{const t=$('#exp');t.select();
-      try{navigator.clipboard.writeText(t.value).catch(()=>document.execCommand('copy'))}catch(x){try{document.execCommand('copy')}catch(y){}}break}
-    case 'import':impTxt=$('#imp').value;doImport(impTxt);break;
+    case 'export':exportFile();break;
   }
 });
 document.addEventListener('input',e=>{
@@ -433,7 +439,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.sel){t.checked?sel.add(t.dataset.sel):sel.delete(t.dataset.sel);render()}
-  if(t.id==='file'&&t.files[0]){const r=new FileReader();r.onload=()=>doImport(String(r.result));r.readAsText(t.files[0])}
+  if(t.id==='file'&&t.files[0]){const r=new FileReader();r.onload=()=>doImport(String(r.result));r.onerror=()=>{msg='⚠️ Datei konnte nicht gelesen werden.';render()};r.readAsText(t.files[0]);t.value=''}
 });
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter')return;
