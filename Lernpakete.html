@@ -41,6 +41,14 @@ textarea{min-height:110px;font-family:ui-monospace,monospace;font-size:13px}
 .pair{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-bottom:6px}
 .msg{padding:9px 12px;border-radius:10px;background:color-mix(in srgb,var(--pr) 14%,var(--card));margin-bottom:10px}
 .tbl{overflow-x:auto}
+.stage{min-height:380px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:10px;cursor:pointer;user-select:none;-webkit-user-select:none;text-align:center}
+.bl{width:230px;height:270px;border-radius:50% 50% 48% 48%/55% 55% 45% 45%;background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--c) 55%,#fff),var(--c));color:#fff;display:flex;align-items:center;justify-content:center;padding:28px;font-weight:600;word-break:break-word;position:relative;transform-origin:50% 100%;box-shadow:inset -8px -10px 20px rgba(0,0,0,.15);margin-bottom:26px}
+.bl::after{content:"";position:absolute;bottom:-14px;left:50%;margin-left:-9px;border:9px solid transparent;border-top:0;border-bottom:16px solid var(--c);transform:rotate(180deg)}
+.ans{font-size:30px;font-weight:700;word-break:break-word;animation:fi .4s}
+.boom{font-size:70px;animation:boom .5s forwards;height:80px}
+@keyframes boom{from{transform:scale(.3);opacity:1}to{transform:scale(1.5);opacity:.15}}
+.bar{width:min(320px,80%);height:6px;background:var(--off);border-radius:3px;margin-top:18px}
+.bar i{display:block;height:100%;width:0;background:var(--pr);border-radius:3px}
 .bridge{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .bh{text-align:center;font-weight:600;margin-bottom:6px}
 .bw{min-height:46px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--bd);background:var(--card);border-radius:10px;cursor:pointer;user-select:none;-webkit-user-select:none;word-break:break-word;display:flex;align-items:center;transition:opacity .4s,transform .4s,border-color .15s,background .15s}
@@ -93,7 +101,7 @@ const save=()=>{try{localStorage.setItem(K,JSON.stringify(S.map(pkgOut)))}catch(
 const getDir=p=>dirs[p.id]||p.dir||'both';
 const dirLbl=(p,d)=>d==='f'?`${esc(p.d1)} → ${esc(p.d2)}`:d==='r'?`${esc(p.d2)} → ${esc(p.d1)}`:'Beide';
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-let V='play',sel=new Set(),dirs={},modeOpt='input',bridgeN=8,msg='',E=null,G=null,armed=null,timer=null,expTxt='',impTxt='';
+let V='play',sel=new Set(),dirs={},modeOpt='input',bridgeN=8,infOpt=8,regOpt=3,msg='',E=null,G=null,armed=null,timer=null,expTxt='',impTxt='';
 
 /* ---------- Bewertung ---------- */
 function rating(p){
@@ -119,8 +127,9 @@ function playV(){
   if(!list.length)return h+`<div class="card">Noch keine Lernpakete vorhanden. Lege unter „📚 Verwalten“ ein Paket an oder importiere welche.</div>`;
   h+=`<h2>1. Pakete &amp; Richtung wählen</h2><p class="mu" style="margin-top:-4px">Schwächer bewertete Pakete stehen oben. Die Richtung legst du für jedes gewählte Paket einzeln fest (vorbelegt mit dem Standard des Pakets).</p>`;
   h+=list.map(p=>{const r=rating(p),on=sel.has(p.id);return `<div class="card"><label class="pkg"><input type="checkbox" data-sel="${p.id}" ${on?'checked':''}>${rate(p)}<span class="grow"><b>${esc(p.title)}</b><br><span class="mu">${esc(p.d1)} ↔ ${esc(p.d2)} · ${p.pairs.length} Paare · ${badge(r)[2]}</span></span><span style="text-align:right">${stars(r)}<br><span class="mu">${r.toFixed(1)} / 5</span></span></label>${on&&modeOpt!=='bridge'?`<div class="seg" style="margin-top:10px">${['f','r','both'].map(d=>`<button class="${getDir(p)===d?'on':''}" data-act="pdir" data-pk="${p.id}" data-id="${d}">${dirLbl(p,d)}</button>`).join('')}</div>`:''}</div>`}).join('');
-  h+=`<h2>2. Modus</h2><div class="seg">${[['input','⌨️ Eingabe'],['mc','🔘 Multiple Choice'],['bridge','🌉 Wortbrücken']].map(a=>`<button class="${modeOpt===a[0]?'on':''}" data-act="mode" data-id="${a[0]}">${a[1]}</button>`).join('')}</div>`;
+  h+=`<h2>2. Modus</h2><div class="seg">${[['input','⌨️ Eingabe'],['mc','🔘 Multiple Choice'],['bridge','🌉 Wortbrücken'],['balloon','🎈 Luftballon']].map(a=>`<button class="${modeOpt===a[0]?'on':''}" data-act="mode" data-id="${a[0]}">${a[1]}</button>`).join('')}</div>`;
   const total=S.filter(p=>sel.has(p.id)).reduce((n,p)=>n+p.pairs.length,0),low=modeOpt==='bridge'&&total<4;
+  if(modeOpt==='balloon')h+=`<p class="mu">Reiner Lernmodus: hat keinen Einfluss auf die Bewertung. Die Geschwindigkeiten stellst du im Spiel ein.</p>`;
   if(modeOpt==='bridge')h+=`<div class="card"><label>Anzahl Paare auf dem Spielfeld: <b id="bnv">${bridgeN}</b><input type="range" id="bn" min="4" max="20" value="${bridgeN}" style="width:100%"></label><span class="mu">Domäne 1 links, Domäne 2 rechts. Die Richtung je Paket spielt hier keine Rolle.</span>${sel.size&&low?'<div class="mu" style="color:var(--ko)">Für Wortbrücken werden mindestens 4 Paare benötigt.</div>':''}</div>`;
   h+=`<p><button class="p" data-act="start" ${sel.size&&!low?'':'disabled'}>Los geht's ▶</button></p>`;
   return h;
@@ -156,6 +165,7 @@ function editV(){
 }
 function gameV(){
   if(G.mode==='bridge')return bridgeV();
+  if(G.mode==='balloon')return balloonV();
   const q=G.cur,st=G.st;
   const from=q.d==='f'?q.p.d1:q.p.d2,to=q.d==='f'?q.p.d2:q.p.d1;
   let h=`<div class="row" style="margin-bottom:10px"><span class="grow mu">✅ ${st.ok} · ❌ ${st.ko}</span><button data-act="end">Beenden</button></div>
@@ -222,6 +232,50 @@ function checkInput(){
   const acc=parts(G.cur.a),typ=parts(a.value);
   answer(typ.length>0&&typ.every(t=>acc.includes(t)));
 }
+
+/* ---------- Luftballon (nur Lernen, keine Bewertung) ---------- */
+function balloonV(){
+  return `<div class="row" style="margin-bottom:8px"><span class="grow mu">🎈 Luftballon – Lernmodus (ohne Bewertung)</span><button data-act="end">Beenden</button></div>
+  <div class="card"><div class="row"><label class="grow">Aufblasen: <b id="binfv">${G.inf}</b> s<input type="range" id="binf" min="2" max="30" step="1" value="${G.inf}" style="width:100%"></label>
+  <label class="grow">Begriff zeigen: <b id="bregv">${G.reg}</b> s<input type="range" id="breg" min="1" max="15" step="0.5" value="${G.reg}" style="width:100%"></label></div>
+  <span class="mu">Tipp auf den Ballon lässt ihn sofort platzen, ein Tipp auf die Auflösung springt zum nächsten Ballon.</span></div>
+  <div class="stage" id="stage" data-bl="1"></div>`;
+}
+function startBalloon(){
+  const P=pool();if(!P.length)return;
+  G={mode:'balloon',pool:P,inf:infOpt,reg:regOpt,st:{ok:0,ko:0},phase:'inflate',p:0,rp:0,last:0};
+  V='game';render();balloonNext();
+  G.raf=requestAnimationFrame(balloonLoop);
+}
+function balloonNext(){
+  const P=G.pool,c=P.length>1?P.filter(i=>i!==G.lastIt):P,w=c.map(weight);
+  let r=Math.random()*w.reduce((a,b)=>a+b,0),it=c[0];
+  for(let i=0;i<c.length;i++){r-=w[i];if(r<=0){it=c[i];break}}
+  G.lastIt=it;G.cur={q:it.d==='f'?it.x.a:it.x.b,a:it.d==='f'?it.x.b:it.x.a,p:it.p,d:it.d,hue:Math.floor(Math.random()*360)};
+  G.phase='inflate';G.p=0;G.rp=0;
+  const q=G.cur,f=q.d==='f'?q.p.d1:q.p.d2,t=q.d==='f'?q.p.d2:q.p.d1,n=q.q.length;
+  $('#stage').innerHTML=`<div class="bl" id="bal" style="--c:hsl(${q.hue} 70% 52%);transform:scale(.2)"><span style="font-size:${n>40?14:n>15?18:24}px">${esc(q.q)}</span></div><div class="mu">${esc(f)} → ${esc(t)}</div>`;
+}
+function balloonPop(){
+  G.phase='reveal';G.rp=0;
+  const q=G.cur,f=q.d==='f'?q.p.d1:q.p.d2,t=q.d==='f'?q.p.d2:q.p.d1;
+  $('#stage').innerHTML=`<div class="boom">💥</div><div class="mu">${esc(f)}: ${esc(q.q)}</div><div class="ans">${esc(q.a)}</div><div class="mu">${esc(t)}</div><div class="bar"><i id="rbar"></i></div>`;
+}
+function balloonLoop(ts){
+  if(!G||G.mode!=='balloon')return;
+  const dt=Math.min(100,G.last?ts-G.last:0);G.last=ts;
+  if(G.phase==='inflate'){
+    G.p+=dt/(G.inf*1000);
+    if(G.p>=1)balloonPop();
+    else{const b=$('#bal');if(b)b.style.transform=`scale(${.2+.8*G.p})`}
+  }else{
+    G.rp+=dt/(G.reg*1000);
+    if(G.rp>=1)balloonNext();
+    else{const b=$('#rbar');if(b)b.style.width=G.rp*100+'%'}
+  }
+  G.raf=requestAnimationFrame(balloonLoop);
+}
+function balloonTap(){if(G.phase==='inflate')balloonPop();else balloonNext()}
 
 /* ---------- Wortbrücken ---------- */
 const shuf=a=>a.map(v=>[Math.random(),v]).sort((x,y)=>x[0]-y[0]).map(x=>x[1]);
@@ -327,6 +381,7 @@ function doImport(text){
 
 /* ---------- Events ---------- */
 document.addEventListener('click',e=>{
+  if(G&&G.mode==='balloon'&&e.target.closest('[data-bl]')){balloonTap();return}
   const w=e.target.closest('.bw');
   if(w&&w.dataset.bw&&G&&G.mode==='bridge'){bridgeClick(w.dataset.bw);return}
   const b=e.target.closest('[data-act]');if(!b)return;
@@ -338,8 +393,8 @@ document.addEventListener('click',e=>{
     case 'pdir':dirs[b.dataset.pk]=id;render();break;
     case 'edir':syncE();E.dir=id;render();break;
     case 'mode':modeOpt=id;render();break;
-    case 'start':{if(modeOpt==='bridge'){startBridge();break}const P=pool();if(!P.length)break;G={pool:P,st:{ok:0,ko:0}};V='game';nextQ();break}
-    case 'end':{clearTimeout(timer);const s=G.st;G=null;V='play';msg=`Runde beendet: ✅ ${s.ok} richtig, ❌ ${s.ko} falsch.`;render();break}
+    case 'start':{if(modeOpt==='bridge'){startBridge();break}if(modeOpt==='balloon'){startBalloon();break}const P=pool();if(!P.length)break;G={pool:P,st:{ok:0,ko:0}};V='game';nextQ();break}
+    case 'end':{clearTimeout(timer);if(G.raf)cancelAnimationFrame(G.raf);const s=G.st;G=null;V='play';msg=`Runde beendet: ✅ ${s.ok} richtig, ❌ ${s.ko} falsch.`;render();break}
     case 'opt':{const o=G.opts[+id];answer(o.ok,+id);break}
     case 'next':nextQ();break;
     case 'edit':{const p=S.find(x=>x.id===id);E={id,title:p.title,d1:p.d1,d2:p.d2,dir:p.dir||'both',rows:p.pairs.map(x=>[x.a,x.b])};V='edit';render();break}
@@ -366,6 +421,8 @@ document.addEventListener('click',e=>{
   }
 });
 document.addEventListener('input',e=>{
+  if(e.target.id==='binf'){infOpt=G.inf=+e.target.value;$('#binfv').textContent=G.inf;return}
+  if(e.target.id==='breg'){regOpt=G.reg=+e.target.value;$('#bregv').textContent=G.reg;return}
   if(e.target.id==='bn'){bridgeN=+e.target.value;$('#bnv').textContent=bridgeN;return}
   if(e.target.id!=='d1'&&e.target.id!=='d2')return;
   const v1=$('#d1').value,v2=$('#d2').value;
@@ -380,7 +437,7 @@ document.addEventListener('change',e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter')return;
-  if(V==='game'&&G&&G.mode==='bridge')return;
+  if(V==='game'&&G&&(G.mode==='bridge'||G.mode==='balloon'))return;
   if(V==='game'&&G){e.preventDefault();
     if(G.done){if(!G.right||true)nextQ()}
     else if(G.mode==='input')checkInput();
