@@ -37,7 +37,7 @@
     font-family:var(--font-body);
     padding:24px 20px 60px;
   }
-  .wrap{max-width:1180px;margin:0 auto;}
+  .wrap{max-width:1600px;margin:0 auto;}
 
   /* ---------- Header / signage title ---------- */
   header.title-block{
@@ -130,12 +130,12 @@
 
   /* ---------- Table ---------- */
   .table-scroll{overflow-x:auto;border-radius:10px;border:1px solid var(--border);background:#fff;}
-  table{border-collapse:separate;border-spacing:0;width:100%;min-width:980px;}
+  table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;}
   thead th{
-    position:sticky;top:0;z-index:2;background:#fff;padding:8px 4px 0;
+    position:sticky;top:0;z-index:2;background:#fff;padding:8px 2px 0;
   }
   th.day-col-head, td.day-col{
-    width:44px;text-align:center;font-family:var(--font-mono);font-size:12px;color:var(--ink-soft);
+    width:36px;text-align:center;font-family:var(--font-mono);font-size:12px;color:var(--ink-soft);
     background:var(--paper-dim);border-right:1px solid var(--border);border-bottom:1px solid var(--border);
     position:sticky;left:0;z-index:1;
   }
@@ -147,14 +147,25 @@
   }
   td.cell{
     padding:0;border-right:1px solid var(--border);border-bottom:1px solid var(--border);
-    min-width:70px;
+    overflow:hidden;
   }
   td.na{background:repeating-linear-gradient(135deg, #f1eee4 0 6px, #e7e2d3 6px 12px);}
+  .cell-inner{display:flex;align-items:stretch;height:34px;}
   .cell input{
-    width:100%;height:34px;border:none;background:transparent;text-align:center;
-    font-family:var(--font-mono);font-size:13px;color:inherit;padding:0 2px;
+    flex:1 1 auto;width:0;min-width:0;height:34px;border:none;background:transparent;text-align:center;
+    font-family:var(--font-mono);font-size:clamp(10px,1.1vw,13px);color:inherit;padding:0 1px;
     font-variant-numeric:tabular-nums;
   }
+  .leistung{
+    flex:0 1 34px;min-width:22px;max-width:34px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-mono);font-size:clamp(7px,0.75vw,8.5px);font-weight:800;margin-left:2px;
+    border-radius:4px;background:rgba(255,255,255,.9);font-variant-numeric:tabular-nums;
+    overflow:hidden;white-space:nowrap;
+  }
+  .leistung.tier-green{color:var(--tier-green);}
+  .leistung.tier-yellow{color:#9a7b16;}
+  .leistung.tier-orange{color:#b45f1c;}
+  .leistung.tier-red{color:var(--tier-red);}
   .cell input::placeholder{color:inherit;opacity:.55;}
   .cell input::-webkit-outer-spin-button,
   .cell input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
@@ -179,10 +190,10 @@
     display:inline-block;margin-top:4px;padding:3px 6px;border-radius:5px;font-family:var(--font-mono);
     font-weight:700;color:#fff;line-height:1.5;
   }
-  .tier-green{background:var(--tier-green);}
-  .tier-yellow{background:var(--tier-yellow);color:var(--ink);}
-  .tier-orange{background:var(--tier-orange);}
-  .tier-red{background:var(--tier-red);}
+  .stat-badge.tier-green{background:var(--tier-green);}
+  .stat-badge.tier-yellow{background:var(--tier-yellow);color:var(--ink);}
+  .stat-badge.tier-orange{background:var(--tier-orange);}
+  .stat-badge.tier-red{background:var(--tier-red);}
 
   footer.note{margin-top:16px;font-size:12px;color:var(--ink-soft);}
 </style>
@@ -225,6 +236,7 @@
     <span><i class="swatch" style="background:var(--red-light)"></i> Rückstand (fortgeschrieben)</span>
     <span><i class="swatch" style="background:var(--purple-strong)"></i> Rückläufiger Wert</span>
     <span><i class="swatch" style="background:#fff;box-shadow:inset 0 0 0 2px var(--lane-yellow)"></i> Heute</span>
+    <span>Rechtes Feld je Tag: <b>Tagesleistung</b> (Ø seit letzter Eingabe)</span>
   </div>
 
   <div class="table-scroll">
@@ -269,6 +281,7 @@
   function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
   function storageKey(y){ return 'radchallenge:' + y; }
   function fmt1(n){ return n.toLocaleString('de-DE', {minimumFractionDigits:1, maximumFractionDigits:1}); }
+  function fmt1Signed(n){ return (n >= 0 ? '+' : '') + fmt1(n); }
   function fmtG(n){ return n.toLocaleString('de-DE', {maximumFractionDigits:1}); }
 
   function loadYear(y){
@@ -300,6 +313,8 @@
 
   function computeYearData(year, goal, entries){
     var dayMap = {};
+    var daysOrdered = [];
+    var explicitList = []; // {idx, val} in chronological order
     var running = 0;
     var idx = 0;
     var monthLastDayInfo = []; // index 1..12 -> dayInfo of last day of month
@@ -317,12 +332,28 @@
           }
         }
         idx++;
-        var info = { iso: iso, m:m, d:d, idx: idx, IST: running, SOLL: idx*goal, hasExplicit: hasExplicit, decreased: decreased };
+        var info = { iso: iso, m:m, d:d, idx: idx, IST: running, SOLL: idx*goal, hasExplicit: hasExplicit, decreased: decreased, leistung: null };
         dayMap[iso] = info;
+        daysOrdered.push(info);
+        if(hasExplicit) explicitList.push({ idx: idx, val: running });
         if(d === dim) monthLastDayInfo[m] = info;
       }
     }
     var totalDays = idx;
+
+    // Tagesleistung: Durchschnitt der Differenz seit der letzten expliziten Eingabe,
+    // gilt für den Tag der letzten Eingabe sowie alle Tage davor (danach bleibt leer).
+    var segStartIdx = 0, segStartVal = 0;
+    for(var e=0; e<explicitList.length; e++){
+      var ent = explicitList[e];
+      var span = ent.idx - segStartIdx;
+      var rate = span > 0 ? (ent.val - segStartVal) / span : 0;
+      for(var i = segStartIdx + 1; i <= ent.idx; i++){
+        daysOrdered[i-1].leistung = rate;
+      }
+      segStartIdx = ent.idx;
+      segStartVal = ent.val;
+    }
 
     // last globally entered date (max ISO date with explicit entry)
     var entryDates = Object.keys(entries).filter(function(k){ return dayMap[k]; }).sort();
@@ -371,6 +402,9 @@
         }
         td.className = 'cell ' + colorClass + (iso === todayISO ? ' is-today' : '');
 
+        var cellInner = document.createElement('div');
+        cellInner.className = 'cell-inner';
+
         var input = document.createElement('input');
         input.type = 'number';
         input.step = '0.1';
@@ -382,13 +416,30 @@
           input.placeholder = fmtG(info.IST);
         }
         input.title = 'Soll: ' + fmtG(info.SOLL) + ' km · Ist: ' + fmtG(info.IST) + ' km';
-        td.appendChild(input);
+        cellInner.appendChild(input);
+
+        if(info.leistung !== null){
+          var perf = document.createElement('span');
+          perf.className = 'leistung ' + tierColorDaily(info.leistung, goal);
+          perf.textContent = fmt1Signed(info.leistung);
+          perf.title = 'Tagesleistung (Ø seit letzter Eingabe): ' + fmt1Signed(info.leistung) + ' km/Tag';
+          cellInner.appendChild(perf);
+        }
+
+        td.appendChild(cellInner);
         tr.appendChild(td);
       }
       tableBody.appendChild(tr);
     }
   }
 
+  function tierColorDaily(avg, goal){
+    // Tagesleistung: Ziel selbst (oder mehr) bereits grün
+    if(avg >= goal) return 'tier-green';
+    if(avg >= goal*0.8) return 'tier-yellow';
+    if(avg >= goal*0.5) return 'tier-orange';
+    return 'tier-red';
+  }
   function tierColorAhead(avg, goal){
     // month completed: higher avg is better
     if(avg > goal) return 'tier-green';
@@ -596,9 +647,6 @@
         showStatus('Import fehlgeschlagen: Keine gültigen Jahresdaten gefunden.', false);
         return;
       }
-      if(!confirm('Daten für ' + yearKeys.length + ' Jahr(e) (' + yearKeys.join(', ') + ') importieren? Bestehende Einträge dieser Jahre werden überschrieben.')){
-        return;
-      }
       yearKeys.forEach(function(y){
         var yd = years[y] || {};
         var goal = (typeof yd.goal === 'number' && yd.goal > 0) ? yd.goal : 10;
@@ -606,7 +654,7 @@
         localStorage.setItem(storageKey(y), JSON.stringify({ goal: goal, entries: entries }));
       });
       setYear(state.year); // aktuelle Ansicht neu laden, falls betroffen
-      showStatus('Import erfolgreich: ' + yearKeys.join(', ') + ' geladen.', true);
+      showStatus('Import erfolgreich: ' + yearKeys.join(', ') + ' geladen (bestehende Daten dieser Jahre wurden überschrieben).', true);
     };
     reader.onerror = function(){
       showStatus('Import fehlgeschlagen: Datei konnte nicht gelesen werden.', false);
