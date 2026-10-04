@@ -116,6 +116,26 @@
     box-shadow:0 2px 0 var(--route-green-dark);
   }
   .io-btn:hover{background:var(--route-green-dark);}
+  .top3-box{
+    margin-left:auto;display:flex;flex-direction:row;gap:10px;
+  }
+  .top3-row{
+    display:flex;flex-direction:column;gap:4px;align-items:flex-start;
+    background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 10px;
+  }
+  .top3-label{
+    font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-soft);
+    font-weight:700;white-space:nowrap;
+  }
+  .top3-items{display:flex;gap:6px;}
+  .top3-chip{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:var(--paper-dim);border-radius:6px;padding:2px 8px;min-width:50px;
+  }
+  .top3-chip .rank{font-size:9px;color:var(--ink-soft);font-weight:700;}
+  .top3-chip .val{font-family:var(--font-mono);font-size:13px;font-weight:800;line-height:1.2;}
+  .top3-chip .day{font-family:var(--font-mono);font-size:10px;color:var(--ink-soft);}
+  .top3-empty{font-size:11px;color:var(--ink-soft);font-style:italic;}
   .io-status{
     font-size:12px;padding:8px 12px;border-radius:6px;margin:-8px 0 18px;font-family:var(--font-mono);
   }
@@ -225,6 +245,16 @@
       <button class="io-btn" id="importBtn" type="button">⭱ Import</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
+    <div class="top3-box">
+      <div class="top3-row">
+        <span class="top3-label">Top Tagesleistung</span>
+        <div class="top3-items" id="top3Perf"></div>
+      </div>
+      <div class="top3-row">
+        <span class="top3-label">Größter Rückstand</span>
+        <div class="top3-items" id="top3Deficit"></div>
+      </div>
+    </div>
   </div>
   <div id="ioStatus" class="io-status" hidden></div>
 
@@ -268,6 +298,8 @@
   var importBtn = document.getElementById('importBtn');
   var importFile = document.getElementById('importFile');
   var ioStatus  = document.getElementById('ioStatus');
+  var top3Perf  = document.getElementById('top3Perf');
+  var top3Deficit = document.getElementById('top3Deficit');
   var headRow   = document.getElementById('headRow');
   var tableBody = document.getElementById('tableBody');
   var tableFoot = document.getElementById('tableFoot');
@@ -344,6 +376,7 @@
     // Tagesleistung: Durchschnitt der Differenz seit der letzten expliziten Eingabe,
     // gilt für den Tag der letzten Eingabe sowie alle Tage davor (danach bleibt leer).
     var segStartIdx = 0, segStartVal = 0;
+    var perfSegments = []; // {idx, iso, rate} - ein Eintrag je expliziter Eingabe (Ende des Segments)
     for(var e=0; e<explicitList.length; e++){
       var ent = explicitList[e];
       var span = ent.idx - segStartIdx;
@@ -351,6 +384,7 @@
       for(var i = segStartIdx + 1; i <= ent.idx; i++){
         daysOrdered[i-1].leistung = rate;
       }
+      perfSegments.push({ idx: ent.idx, iso: daysOrdered[ent.idx-1].iso, rate: rate });
       segStartIdx = ent.idx;
       segStartVal = ent.val;
     }
@@ -363,8 +397,9 @@
     var lastEntryIdx = lastEntryInfo ? lastEntryInfo.idx : 0;
 
     return {
-      dayMap: dayMap, totalDays: totalDays, monthLastDayInfo: monthLastDayInfo,
-      lastEntryISO: lastEntryISO, lastEntryIST: lastEntryIST, lastEntryIdx: lastEntryIdx
+      dayMap: dayMap, daysOrdered: daysOrdered, totalDays: totalDays, monthLastDayInfo: monthLastDayInfo,
+      lastEntryISO: lastEntryISO, lastEntryIST: lastEntryIST, lastEntryIdx: lastEntryIdx,
+      perfSegments: perfSegments
     };
   }
 
@@ -520,11 +555,53 @@
       '<span>Fortschritt: <b>' + fmt1(pct) + ' %</b></span>';
   }
 
+  function shortDay(iso){
+    var p = iso.split('-');
+    return p[2] + '.' + p[1] + '.';
+  }
+
+  function renderTop3Items(container, items, formatVal){
+    container.innerHTML = '';
+    if(items.length === 0){
+      var empty = document.createElement('span');
+      empty.className = 'top3-empty';
+      empty.textContent = 'keine Daten';
+      container.appendChild(empty);
+      return;
+    }
+    items.forEach(function(it, i){
+      var chip = document.createElement('div');
+      chip.className = 'top3-chip';
+      chip.innerHTML =
+        '<span class="rank">' + (i+1) + '.</span>' +
+        '<span class="val">' + formatVal(it) + '</span>' +
+        '<span class="day">' + shortDay(it.iso) + '</span>';
+      container.appendChild(chip);
+    });
+  }
+
+  function renderTop3(model, goal){
+    // Top3 Tagesleistung: die 3 höchsten Durchschnittswerte je Eingabe-Segment
+    var perfTop = model.perfSegments.slice().sort(function(a,b){ return b.rate - a.rate; }).slice(0,3);
+    renderTop3Items(top3Perf, perfTop, function(it){ return fmt1Signed(it.rate); });
+
+    // Top3 größter Rückstand (Soll - Ist), nur Tage bis zur letzten Eingabe, nur echte Rückstände (>0)
+    var deficits = [];
+    for(var i=0; i<model.lastEntryIdx; i++){
+      var day = model.daysOrdered[i];
+      var diff = day.SOLL - day.IST;
+      if(diff > 0) deficits.push({ iso: day.iso, diff: diff });
+    }
+    var deficitTop = deficits.sort(function(a,b){ return b.diff - a.diff; }).slice(0,3);
+    renderTop3Items(top3Deficit, deficitTop, function(it){ return fmtG(it.diff); });
+  }
+
   function render(){
     var model = computeYearData(state.year, state.goal, state.entries);
     renderTable(model, state.goal, state.year);
     renderFooter(model, state.goal, state.year);
     renderRoute(model, state.goal, state.year);
+    renderTop3(model, state.goal);
   }
 
   function setYear(y){
