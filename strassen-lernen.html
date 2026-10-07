@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Straßennamen lernen</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{--bg:#f4f5f7;--fg:#1c2330;--card:#fff;--ac:#2f6fdd;--bd:#d6dae1}
+@media(prefers-color-scheme:dark){:root{--bg:#161a22;--fg:#e8ebf0;--card:#222834;--bd:#3a4252}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:15px system-ui,sans-serif;background:var(--bg);color:var(--fg);display:flex;flex-direction:column}
+header{padding:10px 16px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;flex:1}
+section{flex:1;min-height:0;display:flex;flex-direction:column}
+[hidden]{display:none!important}
+button{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg);cursor:pointer}
+button.p{background:var(--ac);border-color:var(--ac);color:#fff}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.on{background:#e8590c;border-color:#e8590c;color:#fff}
+input{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+#tiles{padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;overflow:auto}
+.tile{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px;min-height:110px;cursor:pointer;position:relative;display:flex;flex-direction:column;justify-content:center}
+.tile:hover{border-color:var(--ac)}.tile b{font-size:17px}.tile small{opacity:.65;margin-top:4px}
+.tile .x{position:absolute;top:6px;right:6px;padding:0 8px;border:none;background:none;opacity:.5}
+.tile.new{align-items:center;border-style:dashed;color:var(--ac);font-weight:600}
+.bar{padding:8px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);border-bottom:1px solid var(--bd)}
+.map{flex:1;min-height:0}
+#status{opacity:.85}#status.err{color:#d6336c;opacity:1}
+#lwrap{flex:1;min-height:0;display:flex}
+#lmap{flex:1;background:#e9edf3}
+@media(prefers-color-scheme:dark){#lmap{background:#10141b}}
+#side{width:260px;border-left:1px solid var(--bd);background:var(--card);display:flex;flex-direction:column}
+#side h3{margin:0;padding:10px 12px;font-size:14px;border-bottom:1px solid var(--bd)}
+#list{list-style:none;margin:0;padding:6px;overflow:auto;flex:1}
+#list li{padding:8px 10px;margin:3px 0;border:1px solid var(--bd);border-radius:8px;cursor:grab;user-select:none;touch-action:none;background:var(--bg)}
+#list li.drag{opacity:.35}
+#ghost{position:fixed;z-index:9999;pointer-events:none;padding:6px 12px;background:var(--ac);color:#fff;border-radius:8px;box-shadow:0 4px 14px #0005;transform:translate(10px,-50%);white-space:nowrap}
+#win{position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:10000}
+#win div{background:var(--card);padding:30px 40px;border-radius:16px;text-align:center}
+#win h2{margin:0 0 8px;font-size:28px}
+</style></head><body>
+
+<header><h1 id="title">🗺️ Straßennamen lernen</h1><button id="back" hidden>← Übersicht</button></header>
+
+<section id="home"><div id="tiles"></div></section>
+
+<section id="pick" hidden>
+ <div class="bar">
+  <label>Karte <select id="tiles-sel" style="padding:6px;border-radius:8px"></select></label>
+  <button id="drawBtn">▭ Rechteck zeichnen</button>
+  <label>Max. Straßen <input id="max" type="number" min="1" value="100" style="width:75px"></label>
+  <label>Name <input id="name" placeholder="Name des Ausschnitts"></label>
+  <button id="save" class="p" disabled>💾 Speichern</button>
+  <span id="status">Zoome zum Bereich und zeichne ein Rechteck (Maus/Finger ziehen).</span>
+ </div>
+ <div id="pmap" class="map"></div>
+</section>
+
+<section id="learn" hidden>
+ <div class="bar"><span id="prog"></span></div>
+ <div id="lwrap"><div id="lmap"></div>
+  <div id="side"><h3>Straßennamen → auf die Karte ziehen</h3><ul id="list"></ul></div></div>
+</section>
+
+<div id="ghost" hidden></div>
+<div id="win" hidden><div><h2>🎉 Geschafft!</h2><p>Alle Straßen richtig zugeordnet.</p><button class="p" id="winBtn">Zur Übersicht</button></div></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const LS={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},
+ set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch{alert('Speicher voll – bitte Ausschnitt löschen.');return false}}};
+const getIndex=()=>LS.get('sl:index',[]);
+function show(v){['home','pick','learn'].forEach(x=>$('#'+x).hidden=x!==v);$('#back').hidden=v==='home';
+ $('#title').textContent=v==='home'?'🗺️ Straßennamen lernen':v==='pick'?'Kartenausschnitt wählen':$('#title').textContent}
+function home(){
+ show('home');const t=$('#tiles');t.innerHTML='';
+ getIndex().forEach(m=>{
+  const d=document.createElement('div');d.className='tile';
+  const b=document.createElement('b');b.textContent=m.name;
+  const s=document.createElement('small');s.textContent=m.count+' Straßen';
+  const x=document.createElement('button');x.className='x';x.textContent='✕';x.title='Löschen';
+  x.onclick=e=>{e.stopPropagation();if(!confirm(`„${m.name}“ löschen?`))return;
+   localStorage.removeItem('sl:map:'+m.id);localStorage.removeItem('sl:names:'+m.id);
+   LS.set('sl:index',getIndex().filter(i=>i.id!==m.id));home()};
+  d.onclick=()=>learn(m.id);d.append(b,s,x);t.append(d)});
+ const n=document.createElement('div');n.className='tile new';n.textContent='＋ Neuer Ausschnitt';n.onclick=pick;t.append(n);
+}
+$('#back').onclick=home;$('#winBtn').onclick=()=>{$('#win').hidden=true;home()};
+
+/* ---------- Ausschnitt wählen ---------- */
+let pmap,wayLayer,rect,cur=null,drawing=false,start=null,loadId=0;
+function status(t,err){const s=$('#status');s.textContent=t;s.className=err?'err':''}
+function pick(){
+ show('pick');
+ if(!pmap){
+  pmap=L.map('pmap').setView([52.52,13.405],12);
+  const T={
+   'OpenStreetMap (nur per localhost)':['https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}],
+   'OpenStreetMap DE':['https://tile.openstreetmap.de/{z}/{x}/{y}.png',{maxZoom:19}],
+   'OpenTopoMap':['https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,subdomains:'abc'}],
+   'CARTO Voyager':['https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}],
+   'Keine Hintergrundkarte':null};
+  const sel=$('#tiles-sel');let tl=null;
+  Object.keys(T).forEach(k=>sel.add(new Option(k,k)));
+  sel.value=LS.get('sl:tiles','OpenStreetMap DE');if(!T[sel.value])sel.value='OpenStreetMap DE';
+  const setT=()=>{tl&&tl.remove();tl=null;LS.set('sl:tiles',sel.value);const t=T[sel.value];
+   if(t)tl=L.tileLayer(t[0],{...t[1],attribution:'© OpenStreetMap-Mitwirkende',referrerPolicy:'origin'}).addTo(pmap)};
+  sel.onchange=setT;setT();
+  wayLayer=L.layerGroup().addTo(pmap);
+  navigator.geolocation&&navigator.geolocation.getCurrentPosition(p=>pmap.setView([p.coords.latitude,p.coords.longitude],14),()=>{},{timeout:6000});
+  const c=pmap.getContainer();
+  c.addEventListener('pointerdown',e=>{
+   if(!drawing||e.target.closest('.leaflet-control'))return;
+   e.preventDefault();e.stopPropagation();c.setPointerCapture(e.pointerId);
+   start=pmap.mouseEventToLatLng(e);rect&&rect.remove();wayLayer.clearLayers();cur=null;upd();
+   rect=L.rectangle([start,start],{color:'#e8590c',weight:2,fillOpacity:.08}).addTo(pmap)},true);
+  c.addEventListener('pointermove',e=>{if(start)rect.setBounds(L.latLngBounds(start,pmap.mouseEventToLatLng(e)))});
+  c.addEventListener('pointerup',e=>{if(!start)return;start=null;setDraw(false);
+   const b=rect.getBounds();
+   if(Math.abs(b.getNorth()-b.getSouth())<1e-5){rect.remove();rect=null;return}
+   fetchStreets(b)});
+ }
+ setTimeout(()=>pmap.invalidateSize(),50);
+}
+function setDraw(on){drawing=on;$('#drawBtn').classList.toggle('on',on);
+ on?pmap.dragging.disable():pmap.dragging.enable();
+ pmap.getContainer().style.cursor=on?'crosshair':'';pmap.getContainer().style.touchAction=on?'none':''}
+$('#drawBtn').onclick=()=>setDraw(!drawing);
+function upd(){
+ const max=+$('#max').value||0;
+ if(!cur){$('#save').disabled=true;return}
+ const n=cur.names;
+ if(n===0){status('Keine benannten Straßen im Bereich.',true);$('#save').disabled=true}
+ else if(n>max){status(`${n} Straßen – zu viele (max. ${max}). Wähle einen kleineren Bereich.`,true);$('#save').disabled=true}
+ else{status(`${n} Straßen im Bereich ✓`);$('#save').disabled=false}
+}
+$('#max').oninput=upd;
+async function fetchStreets(b){
+ const my=++loadId;status('Lade Straßen von OpenStreetMap …');
+ const bb=[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(v=>v.toFixed(6)).join(',');
+ const q=`[out:json][timeout:25];way["highway"~"^(trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|road)$"]["name"](${bb});out tags geom(${bb});`;
+ fetch('https://nominatim.openstreetmap.org/reverse?format=json&zoom=16&accept-language=de&lat='+b.getCenter().lat+'&lon='+b.getCenter().lng)
+  .then(r=>r.json()).then(j=>{if(my!==loadId)return;const a=j.address||{};
+   $('#name').value=a.neighbourhood||a.quarter||a.suburb||a.city_district||a.city||a.town||a.village||'Mein Ausschnitt'}).catch(()=>{$('#name').value||($('#name').value='Mein Ausschnitt')});
+ try{
+  const EP=['https://overpass-api.de/api/interpreter','https://overpass.openstreetmap.fr/api/interpreter',
+   'https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter',
+   'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  let j=null,errs=[];
+  for(let round=1;round<=3&&!j;round++){
+   for(const u of EP){
+    if(my!==loadId)return;
+    try{
+     status(`Lade Straßen von ${new URL(u).host} … (Versuch ${round}/3)`);
+     const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+     if(!r.ok)throw new Error('HTTP '+r.status);
+     const t=await r.text();
+     j=JSON.parse(t);
+     if(j.remark&&!j.elements.length&&/runtime error|timed out/i.test(j.remark))throw new Error('Server überlastet');
+     break;
+    }catch(e){j=null;if(round===3)errs.push(new URL(u).host+': '+e.message)}
+   }
+   if(!j&&round<3){status('Alle Server ausgelastet – neuer Versuch in 4 s …');await new Promise(r=>setTimeout(r,4000))}
+  }
+  if(!j)throw new Error('kein Overpass-Server erreichbar ('+errs.join('; ')+'). Bitte später erneut versuchen.');
+  if(my!==loadId)return;
+  const ways=j.elements.filter(e=>e.type==='way'&&e.geometry).map(e=>({i:e.id,name:e.tags.name,
+   p:e.geometry.filter(Boolean).map(g=>[+g.lat.toFixed(5),+g.lon.toFixed(5)])})).filter(w=>w.p.length>1);
+  cur={ways,b,names:new Set(ways.map(w=>w.name)).size};
+  ways.forEach(w=>L.polyline(w.p,{color:'#d6336c',weight:4}).addTo(wayLayer));
+  upd();
+ }catch(e){status('Fehler beim Laden: '+e.message,true)}
+}
+$('#save').onclick=()=>{
+ if(!cur)return;const id=Date.now().toString(36),names={};
+ cur.ways.forEach(w=>names[w.i]=w.name);
+ const geo={bounds:[[cur.b.getSouth(),cur.b.getWest()],[cur.b.getNorth(),cur.b.getEast()]],ways:cur.ways.map(w=>({i:w.i,p:w.p}))};
+ if(!LS.set('sl:map:'+id,geo))return;
+ if(!LS.set('sl:names:'+id,names)){localStorage.removeItem('sl:map:'+id);return}
+ LS.set('sl:index',[...getIndex(),{id,name:$('#name').value.trim()||'Mein Ausschnitt',count:cur.names}]);
+ wayLayer.clearLayers();rect&&rect.remove();rect=null;cur=null;home();
+};
+
+/* ---------- Lernen ---------- */
+let lmap,lLayer,groups={},drag=null,hl=null;
+const BASE={color:'#3b6fd4',weight:4},OK={color:'#1a9c3c',weight:6},HI={color:'#f59f00',weight:9},BAD={color:'#e03131',weight:8};
+function learn(id){
+ const m=getIndex().find(i=>i.id===id),geo=LS.get('sl:map:'+id),names=LS.get('sl:names:'+id);
+ if(!geo||!names){alert('Daten fehlen.');return}
+ show('learn');$('#title').textContent='📍 '+m.name;
+ if(!lmap){lmap=L.map('lmap',{zoomSnap:.25,attributionControl:false});lLayer=L.layerGroup().addTo(lmap)}
+ lLayer.clearLayers();groups={};hl=null;
+ geo.ways.forEach(w=>{const n=names[w.i];if(!n)return;
+  const g=groups[n]||(groups[n]={layers:[],solved:false});
+  g.layers.push(L.polyline(w.p,BASE).addTo(lLayer))});
+ const list=$('#list');list.innerHTML='';
+ Object.keys(groups).sort((a,b)=>a.localeCompare(b,'de')).forEach(n=>{
+  const li=document.createElement('li');li.textContent=n;li.dataset.n=n;list.append(li)});
+ setTimeout(()=>{lmap.invalidateSize();lmap.fitBounds(geo.bounds)},50);prog();
+}
+const prog=()=>{const t=Object.keys(groups).length,r=$('#list').children.length;$('#prog').textContent=`Gelernt: ${t-r} / ${t}`};
+function hit(e){
+ const r=lmap.getContainer().getBoundingClientRect();
+ if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)return null;
+ const P=L.point(e.clientX-r.left,e.clientY-r.top);let best=null,bd=16;
+ for(const n in groups){const g=groups[n];if(g.solved)continue;
+  for(const l of g.layers){const pts=l.getLatLngs().map(p=>lmap.latLngToContainerPoint(p));
+   for(let i=1;i<pts.length;i++){const d=L.LineUtil.pointToSegmentDistance(P,pts[i-1],pts[i]);if(d<bd){bd=d;best=n}}}}
+ return best;
+}
+function style(n,s){groups[n].layers.forEach(l=>{l.setStyle(s);s===HI&&l.bringToFront()})}
+function setHl(n){if(n===hl)return;hl&&groups[hl]&&!groups[hl].solved&&style(hl,BASE);hl=n;n&&style(n,HI)}
+const mv=e=>{const g=$('#ghost');g.style.left=e.clientX+'px';g.style.top=e.clientY+'px';setHl(hit(e))};
+$('#list').addEventListener('pointerdown',e=>{
+ const li=e.target.closest('li');if(!li)return;e.preventDefault();
+ li.setPointerCapture(e.pointerId);drag={li,n:li.dataset.n};li.classList.add('drag');
+ const g=$('#ghost');g.textContent=drag.n;g.hidden=false;mv(e)});
+$('#list').addEventListener('pointermove',e=>{drag&&mv(e)});
+const endDrag=e=>{
+ if(!drag)return;const h=e.type==='pointercancel'?null:hit(e),{li,n}=drag;drag=null;
+ $('#ghost').hidden=true;setHl(null);li.classList.remove('drag');
+ if(!h)return;
+ if(h===n){groups[n].solved=true;style(n,OK);groups[n].layers.forEach(l=>l.bindTooltip(n,{sticky:true}));li.remove();prog();
+  if(!$('#list').children.length)setTimeout(()=>$('#win').hidden=false,400)}
+ else{style(h,BAD);setTimeout(()=>{if(!groups[h].solved)style(h,BASE)},800)}
+};
+$('#list').addEventListener('pointerup',endDrag);
+$('#list').addEventListener('pointercancel',endDrag);
+home();
+</script></body></html>
