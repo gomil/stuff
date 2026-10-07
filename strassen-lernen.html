@@ -4,6 +4,7 @@
 <title>Straßennamen lernen</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pbf@3.2.1/dist/pbf.js"></script>
 <style>
 :root{--bg:#f4f5f7;--fg:#1c2330;--card:#fff;--ac:#2f6fdd;--bd:#d6dae1}
 @media(prefers-color-scheme:dark){:root{--bg:#161a22;--fg:#e8ebf0;--card:#222834;--bd:#3a4252}}
@@ -17,7 +18,7 @@ button{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--bd
 button.p{background:var(--ac);border-color:var(--ac);color:#fff}
 button:disabled{opacity:.4;cursor:not-allowed}
 button.on{background:#e8590c;border-color:#e8590c;color:#fff}
-input{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+input,select{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
 #tiles{padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;overflow:auto}
 .tile{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px;min-height:110px;cursor:pointer;position:relative;display:flex;flex-direction:column;justify-content:center}
 .tile:hover{border-color:var(--ac)}.tile b{font-size:17px}.tile small{opacity:.65;margin-top:4px}
@@ -27,7 +28,7 @@ input{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bd);
 .map{flex:1;min-height:0}
 #status{opacity:.85}#status.err{color:#d6336c;opacity:1}
 #lwrap{flex:1;min-height:0;display:flex}
-#lmap{flex:1;background:#e9edf3}
+#lmap{flex:1;background:#eef0f3}
 @media(prefers-color-scheme:dark){#lmap{background:#10141b}}
 #side{width:260px;border-left:1px solid var(--bd);background:var(--card);display:flex;flex-direction:column}
 #side h3{margin:0;padding:10px 12px;font-size:14px;border-bottom:1px solid var(--bd)}
@@ -46,10 +47,11 @@ input{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bd);
 
 <section id="pick" hidden>
  <div class="bar">
-  <label>Karte <select id="tiles-sel" style="padding:6px;border-radius:8px"></select></label>
+  <label>Orientierung <select id="tiles-sel"></select></label>
   <button id="drawBtn">▭ Rechteck zeichnen</button>
   <label>Max. Straßen <input id="max" type="number" min="1" value="100" style="width:75px"></label>
   <label>Name <input id="name" placeholder="Name des Ausschnitts"></label>
+  <label><input type="checkbox" id="offl" checked> Hintergrund (Wasser, Grün, Wege) mitspeichern</label>
   <button id="save" class="p" disabled>💾 Speichern</button>
   <span id="status">Zoome zum Bereich und zeichne ein Rechteck (Maus/Finger ziehen).</span>
  </div>
@@ -57,7 +59,7 @@ input{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bd);
 </section>
 
 <section id="learn" hidden>
- <div class="bar"><span id="prog"></span></div>
+ <div class="bar"><span id="prog"></span><small style="opacity:.6;margin-left:auto">Daten: © OpenStreetMap-Mitwirkende · OpenMapTiles · OpenFreeMap</small></div>
  <div id="lwrap"><div id="lmap"></div>
   <div id="side"><h3>Straßennamen → auf die Karte ziehen</h3><ul id="list"></ul></div></div>
 </section>
@@ -70,6 +72,16 @@ const $=s=>document.querySelector(s);
 const LS={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},
  set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch{alert('Speicher voll – bitte Ausschnitt löschen.');return false}}};
 const getIndex=()=>LS.get('sl:index',[]);
+
+/* ---------- IndexedDB (Hintergrunddaten) ---------- */
+const idb=new Promise((res,rej)=>{const r=indexedDB.open('sl',1);r.onupgradeneeded=()=>r.result.createObjectStore('t');
+ r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const idbTx=async(m,f)=>{const d=await idb;return new Promise((res,rej)=>{const t=d.transaction('t',m),q=f(t.objectStore('t'));
+ t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})};
+const bgPut=(id,v)=>idbTx('readwrite',s=>s.put(v,id+'/bg'));
+const bgGet=id=>idbTx('readonly',s=>s.get(id+'/bg')).catch(()=>null);
+const bgDel=id=>idbTx('readwrite',s=>s.delete(id+'/bg')).catch(()=>{});
+
 function show(v){['home','pick','learn'].forEach(x=>$('#'+x).hidden=x!==v);$('#back').hidden=v==='home';
  $('#title').textContent=v==='home'?'🗺️ Straßennamen lernen':v==='pick'?'Kartenausschnitt wählen':$('#title').textContent}
 function home(){
@@ -77,15 +89,89 @@ function home(){
  getIndex().forEach(m=>{
   const d=document.createElement('div');d.className='tile';
   const b=document.createElement('b');b.textContent=m.name;
-  const s=document.createElement('small');s.textContent=m.count+' Straßen';
+  const s=document.createElement('small');s.textContent=m.count+' Straßen'+(m.bg?' · mit Hintergrund':'');
   const x=document.createElement('button');x.className='x';x.textContent='✕';x.title='Löschen';
   x.onclick=e=>{e.stopPropagation();if(!confirm(`„${m.name}“ löschen?`))return;
-   localStorage.removeItem('sl:map:'+m.id);localStorage.removeItem('sl:names:'+m.id);
+   localStorage.removeItem('sl:map:'+m.id);localStorage.removeItem('sl:names:'+m.id);bgDel(m.id);
    LS.set('sl:index',getIndex().filter(i=>i.id!==m.id));home()};
   d.onclick=()=>learn(m.id);d.append(b,s,x);t.append(d)});
  const n=document.createElement('div');n.className='tile new';n.textContent='＋ Neuer Ausschnitt';n.onclick=pick;t.append(n);
 }
 $('#back').onclick=home;$('#winBtn').onclick=()=>{$('#win').hidden=true;home()};
+
+/* ---------- Vektorkacheln (OpenFreeMap, OpenMapTiles-Schema) ---------- */
+const rT=(t,r,p)=>{if(t===3){const l=p.readMessage(rL,{name:'',keys:[],values:[],feats:[],extent:4096});r[l.name]=l}};
+const rL=(t,l,p)=>{if(t===1)l.name=p.readString();else if(t===2)l.feats.push(p.readMessage(rF,{tags:[],type:0,geom:[]}));
+ else if(t===3)l.keys.push(p.readString());else if(t===4)l.values.push(p.readMessage(rV,{v:null}));else if(t===5)l.extent=p.readVarint()};
+const rF=(t,f,p)=>{if(t===2){const e=p.readVarint()+p.pos;while(p.pos<e)f.tags.push(p.readVarint())}
+ else if(t===3)f.type=p.readVarint();else if(t===4){const e=p.readVarint()+p.pos;while(p.pos<e)f.geom.push(p.readVarint())}};
+const rV=(t,v,p)=>{if(t===1)v.v=p.readString();else if(t===2)v.v=p.readFloat();else if(t===3)v.v=p.readDouble();
+ else if(t===4)v.v=p.readVarint(true);else if(t===5)v.v=p.readVarint();else if(t===6)v.v=p.readSVarint();else if(t===7)v.v=p.readBoolean()};
+function geom(f,ext,z,X,Y){
+ const g=f.geom,N=2**z,raw=[];let i=0,x=0,y=0,cur=null;
+ const ll=([px,py])=>[+(Math.atan(Math.sinh(Math.PI*(1-2*(Y+py/ext)/N)))*180/Math.PI).toFixed(5),+((X+px/ext)/N*360-180).toFixed(5)];
+ while(i<g.length){const c=g[i++],id=c&7,n=c>>3;if(id===7)continue;
+  for(let k=0;k<n;k++){x+=(g[i]>>1)^-(g[i]&1);y+=(g[i+1]>>1)^-(g[i+1]&1);i+=2;if(id===1){cur=[];raw.push(cur)}cur.push([x,y])}}
+ if(f.type===1)return raw.map(r=>ll(r[0]));
+ if(f.type===2)return raw.map(r=>r.map(ll));
+ const polys=[];raw.forEach(r=>{let a=0;for(let j=0;j<r.length;j++){const q=r[(j+1)%r.length];a+=r[j][0]*q[1]-q[0]*r[j][1]}
+  const ring=r.map(ll);if(a>0||!polys.length)polys.push([ring]);else polys[polys.length-1].push(ring)});
+ return polys;
+}
+/* Clipping auf Rechteck bb=[w,s,e,n]; Punkte sind [lat,lon] */
+function clipLine(P,bb){
+ const out=[];let cur=[];
+ for(let i=1;i<P.length;i++){
+  const[y0,x0]=P[i-1],[y1,x1]=P[i],dx=x1-x0,dy=y1-y0,pr=[-dx,dx,-dy,dy],q=[x0-bb[0],bb[2]-x0,y0-bb[1],bb[3]-y0];
+  let t0=0,t1=1,ok=true;
+  for(let k=0;k<4&&ok;k++){
+   if(pr[k]===0){if(q[k]<0)ok=false}
+   else{const t=q[k]/pr[k];if(pr[k]<0){if(t>t1)ok=false;else if(t>t0)t0=t}else{if(t<t0)ok=false;else if(t<t1)t1=t}}}
+  if(!ok){if(cur.length>1)out.push(cur);cur=[];continue}
+  if(!cur.length)cur.push([y0+t0*dy,x0+t0*dx]);
+  cur.push([y0+t1*dy,x0+t1*dx]);
+  if(t1<1){out.push(cur);cur=[]}
+ }
+ if(cur.length>1)out.push(cur);
+ return out.map(l=>l.map(p=>[+p[0].toFixed(5),+p[1].toFixed(5)]));
+}
+function clipPoly(P,[w,s,e,n]){
+ const E=[[p=>p[1]>=w,(a,b)=>{const t=(w-a[1])/(b[1]-a[1]);return[a[0]+t*(b[0]-a[0]),w]}],
+  [p=>p[1]<=e,(a,b)=>{const t=(e-a[1])/(b[1]-a[1]);return[a[0]+t*(b[0]-a[0]),e]}],
+  [p=>p[0]>=s,(a,b)=>{const t=(s-a[0])/(b[0]-a[0]);return[s,a[1]+t*(b[1]-a[1])]}],
+  [p=>p[0]<=n,(a,b)=>{const t=(n-a[0])/(b[0]-a[0]);return[n,a[1]+t*(b[1]-a[1])]}]];
+ for(const[ins,x]of E){const o=[];
+  for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];
+   if(ins(b)){if(!ins(a))o.push(x(a,b));o.push(b)}else if(ins(a))o.push(x(a,b))}
+  P=o;if(!P.length)break}
+ return P.length>2?P.map(p=>[+p[0].toFixed(5),+p[1].toFixed(5)]):null;
+}
+let tileUrl=null;
+const STREET=new Set(['motorway','trunk','primary','secondary','tertiary','minor']);
+const ROAD=new Set([...STREET,'service','track','path','pedestrian']);
+async function loadData(b,onProg){
+ if(!tileUrl)tileUrl=(await(await fetch('https://tiles.openfreemap.org/planet')).json()).tiles[0];
+ const Z=14,N=2**Z,bb=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()];
+ const lx=lon=>Math.floor((lon+180)/360*N),ly=lat=>{const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*N)};
+ const x0=lx(bb[0]),x1=lx(bb[2]),y0=ly(bb[3]),y1=ly(bb[1]),cnt=(x1-x0+1)*(y1-y0+1);
+ if(cnt>30)throw new Error(`Rechteck zu groß (${cnt} Kartenkacheln, max. 30)`);
+ const jobs=[];for(let X=x0;X<=x1;X++)for(let Y=y0;Y<=y1;Y++)jobs.push([X,Y]);
+ const R={ways:[],bg:{roads:[],water:[],park:[]},places:[]};let done=0,nid=1;
+ const run=async()=>{while(jobs.length){const[X,Y]=jobs.pop();
+  const r=await fetch(tileUrl.replace('{z}',Z).replace('{x}',X).replace('{y}',Y));
+  if(!r.ok)throw new Error('Kachel HTTP '+r.status);
+  const T=new Pbf(new Uint8Array(await r.arrayBuffer())).readFields(rT,{});
+  const each=(name,fn)=>{const l=T[name];if(!l)return;l.feats.forEach(f=>{const p={};
+   for(let i=0;i<f.tags.length;i+=2)p[l.keys[f.tags[i]]]=l.values[f.tags[i+1]].v;fn(p,geom(f,l.extent,Z,X,Y),f.type)})};
+  each('transportation_name',(p,G,t)=>{if(t!==2||!p.name||!STREET.has(p.class))return;
+   G.forEach(line=>clipLine(line,bb).forEach(c=>R.ways.push({i:nid++,name:p.name,p:c})))});
+  each('transportation',(p,G,t)=>{if(t===2&&ROAD.has(p.class))G.forEach(line=>clipLine(line,bb).forEach(c=>R.bg.roads.push(c)))});
+  for(const k of['water','park'])each(k,(p,G,t)=>t===3&&G.forEach(poly=>{const rs=poly.map(r=>clipPoly(r,bb)).filter(Boolean);if(rs.length)R.bg[k].push(rs)}));
+  each('place',(p,G,t)=>{if(t===1&&p.name&&G[0])R.places.push({n:p.name,c:p.class,p:G[0]})});
+  onProg(++done,cnt)}};
+ await Promise.all([run(),run(),run(),run()]);
+ return R;
+}
 
 /* ---------- Ausschnitt wählen ---------- */
 let pmap,wayLayer,rect,cur=null,drawing=false,start=null,loadId=0;
@@ -95,16 +181,15 @@ function pick(){
  if(!pmap){
   pmap=L.map('pmap').setView([52.52,13.405],12);
   const T={
-   'OpenStreetMap (nur per localhost)':['https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}],
    'OpenStreetMap DE':['https://tile.openstreetmap.de/{z}/{x}/{y}.png',{maxZoom:19}],
+   'OpenStreetMap (nur per localhost)':['https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}],
    'OpenTopoMap':['https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,subdomains:'abc'}],
-   'CARTO Voyager':['https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}],
    'Keine Hintergrundkarte':null};
   const sel=$('#tiles-sel');let tl=null;
   Object.keys(T).forEach(k=>sel.add(new Option(k,k)));
-  sel.value=LS.get('sl:tiles','OpenStreetMap DE');if(!T[sel.value])sel.value='OpenStreetMap DE';
+  sel.value=LS.get('sl:tiles','OpenStreetMap DE');if(!T[sel.value]&&sel.value!=='Keine Hintergrundkarte')sel.value='OpenStreetMap DE';
   const setT=()=>{tl&&tl.remove();tl=null;LS.set('sl:tiles',sel.value);const t=T[sel.value];
-   if(t)tl=L.tileLayer(t[0],{...t[1],attribution:'© OpenStreetMap-Mitwirkende',referrerPolicy:'origin'}).addTo(pmap)};
+   if(t)tl=L.tileLayer(t[0],{...t[1],attribution:'© OpenStreetMap-Mitwirkende'}).addTo(pmap)};
   sel.onchange=setT;setT();
   wayLayer=L.layerGroup().addTo(pmap);
   navigator.geolocation&&navigator.geolocation.getCurrentPosition(p=>pmap.setView([p.coords.latitude,p.coords.longitude],14),()=>{},{timeout:6000});
@@ -136,60 +221,46 @@ function upd(){
 }
 $('#max').oninput=upd;
 async function fetchStreets(b){
- const my=++loadId;status('Lade Straßen von OpenStreetMap …');
- const bb=[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(v=>v.toFixed(6)).join(',');
- const q=`[out:json][timeout:25];way["highway"~"^(trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|road)$"]["name"](${bb});out tags geom(${bb});`;
- fetch('https://nominatim.openstreetmap.org/reverse?format=json&zoom=16&accept-language=de&lat='+b.getCenter().lat+'&lon='+b.getCenter().lng)
-  .then(r=>r.json()).then(j=>{if(my!==loadId)return;const a=j.address||{};
-   $('#name').value=a.neighbourhood||a.quarter||a.suburb||a.city_district||a.city||a.town||a.village||'Mein Ausschnitt'}).catch(()=>{$('#name').value||($('#name').value='Mein Ausschnitt')});
+ const my=++loadId;status('Lade Kartendaten …');
  try{
-  const EP=['https://overpass-api.de/api/interpreter','https://overpass.openstreetmap.fr/api/interpreter',
-   'https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter',
-   'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
-  let j=null,errs=[];
-  for(let round=1;round<=3&&!j;round++){
-   for(const u of EP){
-    if(my!==loadId)return;
-    try{
-     status(`Lade Straßen von ${new URL(u).host} … (Versuch ${round}/3)`);
-     const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
-     if(!r.ok)throw new Error('HTTP '+r.status);
-     const t=await r.text();
-     j=JSON.parse(t);
-     if(j.remark&&!j.elements.length&&/runtime error|timed out/i.test(j.remark))throw new Error('Server überlastet');
-     break;
-    }catch(e){j=null;if(round===3)errs.push(new URL(u).host+': '+e.message)}
-   }
-   if(!j&&round<3){status('Alle Server ausgelastet – neuer Versuch in 4 s …');await new Promise(r=>setTimeout(r,4000))}
-  }
-  if(!j)throw new Error('kein Overpass-Server erreichbar ('+errs.join('; ')+'). Bitte später erneut versuchen.');
+  const R=await loadData(b,(d,n)=>my===loadId&&status(`Lade Kartendaten … ${d}/${n}`));
   if(my!==loadId)return;
-  const ways=j.elements.filter(e=>e.type==='way'&&e.geometry).map(e=>({i:e.id,name:e.tags.name,
-   p:e.geometry.filter(Boolean).map(g=>[+g.lat.toFixed(5),+g.lon.toFixed(5)])})).filter(w=>w.p.length>1);
-  cur={ways,b,names:new Set(ways.map(w=>w.name)).size};
-  ways.forEach(w=>L.polyline(w.p,{color:'#d6336c',weight:4}).addTo(wayLayer));
+  const c=b.getCenter(),dist=p=>(p[0]-c.lat)**2+(p[1]-c.lng)**2;
+  let nm='';
+  for(const cls of[['neighbourhood','quarter'],['suburb'],['city_district'],['city','town','village']]){
+   const pl=R.places.filter(x=>cls.includes(x.c)).sort((a,z)=>dist(a.p)-dist(z.p))[0];if(pl){nm=pl.n;break}}
+  $('#name').value=nm||'Mein Ausschnitt';
+  cur={ways:R.ways,bg:R.bg,b,names:new Set(R.ways.map(w=>w.name)).size};
+  R.ways.forEach(w=>L.polyline(w.p,{color:'#d6336c',weight:4}).addTo(wayLayer));
   upd();
  }catch(e){status('Fehler beim Laden: '+e.message,true)}
 }
-$('#save').onclick=()=>{
- if(!cur)return;const id=Date.now().toString(36),names={};
+$('#save').onclick=async()=>{
+ if(!cur)return;const id=Date.now().toString(36),names={},ids={};
  cur.ways.forEach(w=>names[w.i]=w.name);
  const geo={bounds:[[cur.b.getSouth(),cur.b.getWest()],[cur.b.getNorth(),cur.b.getEast()]],ways:cur.ways.map(w=>({i:w.i,p:w.p}))};
  if(!LS.set('sl:map:'+id,geo))return;
  if(!LS.set('sl:names:'+id,names)){localStorage.removeItem('sl:map:'+id);return}
- LS.set('sl:index',[...getIndex(),{id,name:$('#name').value.trim()||'Mein Ausschnitt',count:cur.names}]);
+ const entry={id,name:$('#name').value.trim()||'Mein Ausschnitt',count:cur.names};
+ if($('#offl').checked){try{await bgPut(id,cur.bg);entry.bg=1}catch(e){alert('Hintergrund konnte nicht gespeichert werden: '+e.message)}}
+ LS.set('sl:index',[...getIndex(),entry]);
  wayLayer.clearLayers();rect&&rect.remove();rect=null;cur=null;home();
 };
 
 /* ---------- Lernen ---------- */
 let lmap,lLayer,groups={},drag=null,hl=null;
 const BASE={color:'#3b6fd4',weight:4},OK={color:'#1a9c3c',weight:6},HI={color:'#f59f00',weight:9},BAD={color:'#e03131',weight:8};
-function learn(id){
+async function learn(id){
  const m=getIndex().find(i=>i.id===id),geo=LS.get('sl:map:'+id),names=LS.get('sl:names:'+id);
  if(!geo||!names){alert('Daten fehlen.');return}
+ const bg=m.bg?await bgGet(id):null;
  show('learn');$('#title').textContent='📍 '+m.name;
  if(!lmap){lmap=L.map('lmap',{zoomSnap:.25,attributionControl:false});lLayer=L.layerGroup().addTo(lmap)}
  lLayer.clearLayers();groups={};hl=null;
+ if(bg){const o={interactive:false,weight:0,fillOpacity:1};
+  bg.water.forEach(p=>L.polygon(p,{...o,fillColor:'#b9d3ee'}).addTo(lLayer));
+  bg.park.forEach(p=>L.polygon(p,{...o,fillColor:'#cfe5c4'}).addTo(lLayer));
+  bg.roads.forEach(l=>L.polyline(l,{interactive:false,color:'#c3c8d0',weight:1.5}).addTo(lLayer))}
  geo.ways.forEach(w=>{const n=names[w.i];if(!n)return;
   const g=groups[n]||(groups[n]={layers:[],solved:false});
   g.layers.push(L.polyline(w.p,BASE).addTo(lLayer))});
