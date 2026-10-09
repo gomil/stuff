@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wellenbecken</title>
+<style>
+  :root {
+    --paper: #edf2f3;
+    --panel: #fbfcfc;
+    --ink: #14262e;
+    --ink-soft: #4d646d;
+    --line: #b7c6cb;
+    --accent: #0b7a83;
+    --accent-ink: #ffffff;
+    --warn: #d2541b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Roboto, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.45;
+    -webkit-text-size-adjust: 100%;
+  }
+  .app {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+  }
+  .basin {
+    position: relative;
+    flex: none;
+    width: min(1024px, 100%);
+    aspect-ratio: 1 / 1;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .basin canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #overlay {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #overlay.tool-drop  { cursor: crosshair; }
+  #overlay.tool-draw  { cursor: crosshair; }
+  #overlay.tool-erase { cursor: pointer; }
+
+  .panel {
+    flex: 1 1 280px;
+    min-width: 260px;
+    max-width: 360px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel h1 {
+    margin: 0 0 4px;
+    font-size: 24px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+  .hint {
+    margin: 0 0 18px;
+    color: var(--ink-soft);
+    min-height: 3em;
+  }
+  .note {
+    margin: 0 0 16px;
+    padding: 8px 10px;
+    border-left: 3px solid var(--warn);
+    background: #fdf1ea;
+    font-size: 14px;
+  }
+  .note[hidden] { display: none; }
+
+  fieldset {
+    border: 0;
+    margin: 0 0 20px;
+    padding: 0;
+    min-width: 0;
+  }
+  legend {
+    padding: 0;
+    margin: 0 0 8px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+  }
+  legend .count { font-weight: 400; color: var(--ink-soft); }
+
+  .seg { display: flex; border: 1px solid var(--accent); border-radius: 4px; overflow: hidden; }
+  .seg label { flex: 1 1 0; position: relative; display: block; }
+  .seg label + label { border-left: 1px solid var(--accent); }
+  .seg input {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; margin: 0; cursor: pointer;
+  }
+  .seg span {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 44px; padding: 4px 6px;
+    text-align: center; font-size: 15px; line-height: 1.2;
+    color: var(--accent); background: transparent;
+  }
+  .seg input:checked + span { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .seg input:focus-visible + span { outline: 3px solid var(--ink); outline-offset: -3px; }
+
+  .btnrow { display: flex; gap: 8px; margin-top: 10px; }
+  button {
+    flex: 1 1 0;
+    min-height: 44px;
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--ink);
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:disabled { color: #9aabb1; cursor: default; background: #f3f6f7; }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .ctl { margin-bottom: 16px; }
+  .ctl .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .ctl label { font-size: 15px; }
+  .ctl output { font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  input[type=range] {
+    width: 100%;
+    height: 44px;
+    margin: 0;
+    background: transparent;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  input[type=range]:focus-visible { outline: 3px solid var(--accent); outline-offset: 0; border-radius: 4px; }
+
+  @media (max-width: 720px) {
+    .app { padding: 10px; gap: 14px; }
+    .panel { max-width: none; width: 100%; flex-basis: 100%; }
+  }
+  noscript { display: block; padding: 20px; }
+</style>
+</head>
+<body>
+<main class="app">
+  <div class="basin" id="basin" role="img" aria-label="Wasserbecken in der Aufsicht"></div>
+
+  <aside class="panel" aria-label="Bedienung">
+    <h1>Wellenbecken</h1>
+    <p class="hint" id="hint" aria-live="polite"></p>
+    <p class="note" id="note" hidden>Kompatibilitätsmodus: Dein Browser unterstützt WebGL2 mit Gleitkomma-Texturen nicht, die Simulation läuft deshalb mit geringerer Auflösung (256 × 256).</p>
+
+    <fieldset>
+      <legend>Werkzeug</legend>
+      <div class="seg">
+        <label><input type="radio" name="tool" value="drop" checked><span>Tropfen</span></label>
+        <label><input type="radio" name="tool" value="draw"><span>Wand zeichnen</span></label>
+        <label><input type="radio" name="tool" value="erase"><span>Wand löschen</span></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Wände <span class="count" id="wallCount">keine</span></legend>
+      <div class="btnrow">
+        <button type="button" id="undo" disabled>Rückgängig</button>
+        <button type="button" id="clear" disabled>Alle Wände entfernen</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Welle</legend>
+      <div class="ctl">
+        <div class="row"><label for="speed">Wellengeschwindigkeit</label><output id="speedOut" for="speed"></output></div>
+        <input type="range" id="speed" min="0" max="100" step="1" value="67">
+      </div>
+      <div class="ctl">
+        <div class="row"><label for="damp">Dämpfung</label><output id="dampOut" for="damp"></output></div>
+        <input type="range" id="damp" min="0" max="100" step="1" value="20">
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Regen</legend>
+      <div class="ctl">
+        <div class="row"><label for="rate">Häufigkeit</label><output id="rateOut" for="rate"></output></div>
+        <input type="range" id="rate" min="0" max="30" step="1" value="0">
+      </div>
+      <div class="ctl">
+        <div class="row"><label for="rainAmp">Stärke</label><output id="rainAmpOut" for="rainAmp"></output></div>
+        <input type="range" id="rainAmp" min="10" max="100" step="1" value="35">
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Ansicht</legend>
+      <div class="seg">
+        <label><input type="radio" name="view" value="0"><span>Farbkarte</span></label>
+        <label><input type="radio" name="view" value="1" checked><span>Wasseroptik</span></label>
+      </div>
+    </fieldset>
+  </aside>
+</main>
+<noscript>Für das Wellenbecken wird JavaScript benötigt. Bitte aktiviere JavaScript in deinem Browser.</noscript>
+
+<script>
+(() => {
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ *  Konstanten
+ * ------------------------------------------------------------------ */
+const W = 1024;                 // logische Beckengröße in Pixeln
+const TICK = 1 / 60;            // fester Simulations-Takt (Sekunden)
+const GL_N = 1024;              // Gitter im WebGL-Modus
+const CPU_N = 256;              // Gitter im Fallback-Modus
+const GL_STEPS = 8;             // Zeitschritte pro Takt (WebGL)
+const CPU_STEPS = 2;            // Zeitschritte pro Takt (CPU, gleiche Bildschirmgeschwindigkeit)
+const NU_MIN = 0.10;            // Courant-Zahl, untere Reglergrenze
+const NU_MAX = 0.70;            // Courant-Zahl, obere Reglergrenze (< 1/sqrt(2) = 0.7071)
+const DAMP_MAX = 0.01;          // Dämpfung pro Zeitschritt bei Reglerstellung 100 %
+const SIGMA_CLICK = 5;          // Tropfenradius (Zellen bei 1024)
+const SIGMA_RAIN = 3;
+const AMP_CLICK = 1.0;
+const SLOPE_BASE = 16;          // Neigungsverstärkung für die Wasseroptik (bei 1024)
+
+/* ------------------------------------------------------------------ *
+ *  Zustand
+ * ------------------------------------------------------------------ */
+const walls = [];               // {x1,y1,x2,y2} in Bildschirmkoordinaten (oben links = 0,0)
+const params = { nu: 0.5, g: 0.0004, rainRate: 0, rainAmp: 0.35 };
+let tool = 'drop';
+let viewMode = 1;
+let backend = null;
+let mask = null;
+let overlayDirty = true;
+let hoverWall = -1;
+let drag = null;                // {id, x1,y1,x2,y2}
+const dropQueue = [];
+
+const $ = (id) => document.getElementById(id);
+const basin = $('basin');
+
+/* ------------------------------------------------------------------ *
+ *  Wand-Rasterung (Bresenham, 4er-dicht, Dicke 2 Zellen im WebGL-Modus)
+ * ------------------------------------------------------------------ */
+function buildMask(N) {
+  const m = new Uint8Array(N * N);
+  const s = N / W;
+  const thick = N >= 1024 ? 2 : 1;
+  const plot = (x, y) => {
+    for (let a = 0; a < thick; a++) {
+      for (let b = 0; b < thick; b++) {
+        const xx = x + a, yy = y + b;
+        if (xx >= 0 && yy >= 0 && xx < N && yy < N) m[yy * N + xx] = 255;   // 255, weil die R8-Textur normalisiert gelesen wird (255 -> 1.0)
+      }
+    }
+  };
+  for (const w of walls) {
+    let x0 = Math.floor(w.x1 * s), y0 = Math.floor((W - w.y1) * s);
+    const x1 = Math.floor(w.x2 * s), y1 = Math.floor((W - w.y2) * s);
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      plot(x0, y0);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  }
+  return m;
+}
+
+/* ------------------------------------------------------------------ *
+ *  WebGL2-Backend
+ * ------------------------------------------------------------------ */
+const GLSL_HEAD = '#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n';
+
+const VERT = GLSL_HEAD + `
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FRAG_SIM = GLSL_HEAD + `
+uniform sampler2D uState;
+uniform sampler2D uWall;
+uniform float uNu2;
+uniform float uG;
+out vec2 o;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  ivec2 sz = textureSize(uState, 0);
+  if (texelFetch(uWall, p, 0).r > 0.5) { o = vec2(0.0); return; }
+  vec2 s = texelFetch(uState, p, 0).rg;
+  float c = s.r;
+  float sum = 0.0;
+  ivec2 d[4] = ivec2[4](ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1));
+  for (int i = 0; i < 4; i++) {
+    ivec2 q = p + d[i];
+    float v = c;
+    if (q.x >= 0 && q.y >= 0 && q.x < sz.x && q.y < sz.y && texelFetch(uWall, q, 0).r < 0.5) {
+      v = texelFetch(uState, q, 0).r;
+    }
+    sum += v;
+  }
+  float n = (2.0 * c - (1.0 - uG) * s.g + uNu2 * (sum - 4.0 * c)) / (1.0 + uG);
+  o = vec2(n, c);
+}`;
+
+const FRAG_DROP = GLSL_HEAD + `
+uniform sampler2D uState;
+uniform sampler2D uWall;
+uniform vec2 uPos;
+uniform float uAmp;
+uniform float uSigma;
+out vec2 o;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  if (texelFetch(uWall, p, 0).r > 0.5) { o = vec2(0.0); return; }
+  vec2 s = texelFetch(uState, p, 0).rg;
+  vec2 r = gl_FragCoord.xy - uPos;
+  float q = dot(r, r) / (2.0 * uSigma * uSigma);
+  float g = q > 30.0 ? 0.0 : uAmp * (1.0 - q) * exp(-q);
+  o = s + vec2(g);
+}`;
+
+const FRAG_RENDER = GLSL_HEAD + `
+uniform sampler2D uState;
+uniform sampler2D uWall;
+uniform int uMode;
+uniform float uSlope;
+out vec4 o;
+float H(ivec2 p, float c, ivec2 sz) {
+  if (p.x < 0 || p.y < 0 || p.x >= sz.x || p.y >= sz.y) return c;
+  if (texelFetch(uWall, p, 0).r > 0.5) return c;
+  return texelFetch(uState, p, 0).r;
+}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  ivec2 sz = textureSize(uState, 0);
+  float u = texelFetch(uState, p, 0).r;
+  float dx = (H(p + ivec2(1, 0), u, sz) - H(p + ivec2(-1, 0), u, sz)) * 0.5;
+  float dy = (H(p + ivec2(0, 1), u, sz) - H(p + ivec2(0, -1), u, sz)) * 0.5;
+  vec3 col;
+  if (uMode == 0) {
+    float t = tanh(u * 8.0);
+    vec3 white = vec3(0.975, 0.98, 0.98);
+    vec3 red = vec3(0.80, 0.16, 0.13);
+    vec3 blue = vec3(0.10, 0.28, 0.72);
+    col = t >= 0.0 ? mix(white, red, t) : mix(white, blue, -t);
+  } else {
+    vec3 n = normalize(vec3(-dx * uSlope, -dy * uSlope, 1.0));
+    vec3 L = normalize(vec3(-0.45, 0.55, 0.70));
+    vec3 Hh = normalize(L + vec3(0.0, 0.0, 1.0));
+    float diff = dot(n, L) / L.z;
+    float t = clamp(0.40 + (diff - 1.0) * 3.0 + u * 0.6, 0.0, 1.0);
+    vec3 deep = vec3(0.03, 0.26, 0.41);
+    vec3 shallow = vec3(0.36, 0.68, 0.78);
+    col = mix(deep, shallow, t);
+    float spec = pow(max(dot(n, Hh), 0.0), 90.0);
+    col += vec3(0.95, 0.98, 1.0) * spec * 0.85;
+  }
+  o = vec4(col, 1.0);
+}`;
+
+function createGLBackend(canvas) {
+  const gl = canvas.getContext('webgl2', {
+    antialias: false, alpha: false, depth: false, stencil: false, preserveDrawingBuffer: false
+  });
+  if (!gl) return null;
+  if (!gl.getExtension('EXT_color_buffer_float')) return null;
+
+  const N = GL_N;
+  let lost = false;
+  let prog, tex, fbo, wallTex, vao, cur;
+
+  const compile = (type, src) => {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+    return sh;
+  };
+  const makeProgram = (frag, uniforms) => {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, frag));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {};
+    uniforms.forEach((name) => { u[name] = gl.getUniformLocation(p, name); });
+    gl.useProgram(p);
+    if (u.uState) gl.uniform1i(u.uState, 0);
+    if (u.uWall) gl.uniform1i(u.uWall, 1);
+    return { p, u };
+  };
+  const makeTex = (internal, format, type, data) => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, internal, N, N, 0, format, type, data);
+    return t;
+  };
+
+  function setup() {
+    prog = {
+      sim: makeProgram(FRAG_SIM, ['uState', 'uWall', 'uNu2', 'uG']),
+      drop: makeProgram(FRAG_DROP, ['uState', 'uWall', 'uPos', 'uAmp', 'uSigma']),
+      render: makeProgram(FRAG_RENDER, ['uState', 'uWall', 'uMode', 'uSlope'])
+    };
+    vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    tex = [0, 1].map(() => makeTex(gl.RG32F, gl.RG, gl.FLOAT, null));
+    fbo = tex.map((t) => {
+      const f = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error('Framebuffer unvollständig');
+      }
+      return f;
+    });
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    wallTex = makeTex(gl.R8, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array(N * N));
+    cur = 0;
+    gl.disable(gl.BLEND);
+    gl.viewport(0, 0, N, N);
+  }
+
+  try { setup(); } catch (err) { console.warn('WebGL2-Setup fehlgeschlagen:', err); return null; }
+
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; });
+  canvas.addEventListener('webglcontextrestored', () => {
+    try {
+      setup();
+      be.setMask(mask);
+      lost = false;
+    } catch (err) { console.warn(err); }
+  });
+
+  const bindSources = () => {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex[cur]);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, wallTex);
+  };
+
+  const be = {
+    name: 'webgl',
+    N,
+    stepsPerTick: GL_STEPS,
+    setMask(m) {
+      if (lost) return;
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, wallTex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, N, N, gl.RED, gl.UNSIGNED_BYTE, m);
+    },
+    addDrop(x, y, amp, sigma) {
+      if (lost) return;
+      const s = N / W;
+      gl.useProgram(prog.drop.p);
+      gl.uniform2f(prog.drop.u.uPos, x * s, (W - y) * s);
+      gl.uniform1f(prog.drop.u.uAmp, amp);
+      gl.uniform1f(prog.drop.u.uSigma, sigma * s);
+      bindSources();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - cur]);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      cur = 1 - cur;
+    },
+    step(nu2, g, count) {
+      if (lost) return;
+      gl.useProgram(prog.sim.p);
+      gl.uniform1f(prog.sim.u.uNu2, nu2);
+      gl.uniform1f(prog.sim.u.uG, g);
+      for (let i = 0; i < count; i++) {
+        bindSources();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - cur]);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        cur = 1 - cur;
+      }
+    },
+    render(mode) {
+      if (lost) return;
+      gl.useProgram(prog.render.p);
+      gl.uniform1i(prog.render.u.uMode, mode);
+      gl.uniform1f(prog.render.u.uSlope, SLOPE_BASE * N / 1024);
+      bindSources();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+  };
+  canvas.width = N;
+  canvas.height = N;
+  gl.viewport(0, 0, N, N);
+  return be;
+}
+
+/* ------------------------------------------------------------------ *
+ *  CPU-Fallback (Canvas 2D)
+ * ------------------------------------------------------------------ */
+function createCPUBackend(canvas) {
+  const N = CPU_N;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  canvas.width = W;
+  canvas.height = W;
+  let a = new Float32Array(N * N);   // aktuelle Auslenkung
+  let b = new Float32Array(N * N);   // vorheriger Zeitschritt
+  let m = new Uint8Array(N * N);
+  const off = document.createElement('canvas');
+  off.width = N; off.height = N;
+  const octx = off.getContext('2d');
+  const img = octx.createImageData(N, N);
+  const data = img.data;
+  const slope = SLOPE_BASE * N / 1024;
+  const L = (() => { const x = -0.45, y = 0.55, z = 0.70, l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; })();
+  const Hh = (() => { const x = L[0], y = L[1], z = L[2] + 1, l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; })();
+  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const mix = (p, q, t) => p + (q - p) * t;
+
+  return {
+    name: 'cpu',
+    N,
+    stepsPerTick: CPU_STEPS,
+    setMask(newMask) { m = newMask; },
+    addDrop(x, y, amp, sigma) {
+      const s = N / W;
+      const gx = x * s, gy = (W - y) * s;
+      const sg = Math.max(sigma * s, 1.0);
+      const r = Math.ceil(sg * 5.5);
+      const x0 = Math.max(0, Math.floor(gx - r)), x1 = Math.min(N - 1, Math.ceil(gx + r));
+      const y0 = Math.max(0, Math.floor(gy - r)), y1 = Math.min(N - 1, Math.ceil(gy + r));
+      for (let yy = y0; yy <= y1; yy++) {
+        for (let xx = x0; xx <= x1; xx++) {
+          const i = yy * N + xx;
+          if (m[i]) continue;
+          const dx = xx + 0.5 - gx, dy = yy + 0.5 - gy;
+          const q = (dx * dx + dy * dy) / (2 * sg * sg);
+          if (q > 30) continue;
+          const v = amp * (1 - q) * Math.exp(-q);
+          a[i] += v; b[i] += v;
+        }
+      }
+    },
+    step(nu2, g, count) {
+      const k1 = 1 - g, k2 = 1 + g;
+      for (let s = 0; s < count; s++) {
+        for (let y = 0; y < N; y++) {
+          for (let x = 0; x < N; x++) {
+            const i = y * N + x;
+            if (m[i]) { b[i] = 0; continue; }
+            const c = a[i];
+            let sum = 0;
+            sum += (x < N - 1 && !m[i + 1]) ? a[i + 1] : c;
+            sum += (x > 0 && !m[i - 1]) ? a[i - 1] : c;
+            sum += (y < N - 1 && !m[i + N]) ? a[i + N] : c;
+            sum += (y > 0 && !m[i - N]) ? a[i - N] : c;
+            b[i] = (2 * c - k1 * b[i] + nu2 * (sum - 4 * c)) / k2;
+          }
+        }
+        const t = a; a = b; b = t;
+      }
+    },
+    render(mode) {
+      for (let j = 0; j < N; j++) {
+        const y = N - 1 - j;
+        for (let x = 0; x < N; x++) {
+          const i = y * N + x;
+          const u = a[i];
+          let r, g, bl;
+          if (mode === 0) {
+            const e = Math.exp(16 * Math.max(-2, Math.min(2, u)));
+            const t = (e - 1) / (e + 1);   // tanh(8u)
+            if (t >= 0) { r = mix(0.975, 0.80, t); g = mix(0.98, 0.16, t); bl = mix(0.98, 0.13, t); }
+            else { const k = -t; r = mix(0.975, 0.10, k); g = mix(0.98, 0.28, k); bl = mix(0.98, 0.72, k); }
+          } else {
+            const hR = (x < N - 1 && !m[i + 1]) ? a[i + 1] : u;
+            const hL = (x > 0 && !m[i - 1]) ? a[i - 1] : u;
+            const hU = (y < N - 1 && !m[i + N]) ? a[i + N] : u;
+            const hD = (y > 0 && !m[i - N]) ? a[i - N] : u;
+            let nx = -(hR - hL) * 0.5 * slope, ny = -(hU - hD) * 0.5 * slope, nz = 1;
+            const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
+            const diff = (nx * L[0] + ny * L[1] + nz * L[2]) / L[2];
+            const t = clamp01(0.40 + (diff - 1) * 3 + u * 0.6);
+            r = mix(0.03, 0.36, t); g = mix(0.26, 0.68, t); bl = mix(0.41, 0.78, t);
+            const sp = Math.pow(Math.max(nx * Hh[0] + ny * Hh[1] + nz * Hh[2], 0), 90) * 0.85;
+            r += 0.95 * sp; g += 0.98 * sp; bl += sp;
+          }
+          const o = (j * N + x) * 4;
+          data[o] = clamp01(r) * 255;
+          data[o + 1] = clamp01(g) * 255;
+          data[o + 2] = clamp01(bl) * 255;
+          data[o + 3] = 255;
+        }
+      }
+      octx.putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(off, 0, 0, W, W);
+    }
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Backend wählen
+ * ------------------------------------------------------------------ */
+function makeCanvas(id) {
+  const c = document.createElement('canvas');
+  if (id) c.id = id;
+  c.width = W; c.height = W;
+  return c;
+}
+
+let simCanvas = makeCanvas('sim');
+basin.appendChild(simCanvas);
+try { backend = createGLBackend(simCanvas); } catch (err) { console.warn(err); backend = null; }
+if (!backend) {
+  // Ein Canvas, auf dem bereits ein WebGL-Kontext angefordert wurde, liefert keinen 2D-Kontext mehr.
+  basin.removeChild(simCanvas);
+  simCanvas = makeCanvas('sim');
+  basin.appendChild(simCanvas);
+  backend = createCPUBackend(simCanvas);
+  if (backend) $('note').hidden = false;
+}
+if (!backend) {
+  basin.removeChild(simCanvas);
+  const msg = document.createElement('p');
+  msg.style.cssText = 'padding:24px;margin:0';
+  msg.textContent = 'Die Simulation kann nicht gestartet werden: Der Browser unterstützt weder WebGL2 noch Canvas 2D.';
+  basin.appendChild(msg);
+  return;
+}
+
+const overlay = makeCanvas('overlay');
+overlay.className = 'tool-drop';
+basin.appendChild(overlay);
+const octx = overlay.getContext('2d');
+
+/* ------------------------------------------------------------------ *
+ *  Wände verwalten
+ * ------------------------------------------------------------------ */
+function refreshWalls() {
+  mask = buildMask(backend.N);
+  backend.setMask(mask);
+  overlayDirty = true;
+  const n = walls.length;
+  $('wallCount').textContent = n === 0 ? 'keine' : (n === 1 ? '1 Wand' : n + ' Wände');
+  $('undo').disabled = n === 0;
+  $('clear').disabled = n === 0;
+}
+
+function isWallAt(x, y) {
+  const s = backend.N / W;
+  const cx = Math.floor(x * s), cy = Math.floor((W - y) * s);
+  if (cx < 0 || cy < 0 || cx >= backend.N || cy >= backend.N) return true;
+  return mask[cy * backend.N + cx] !== 0;
+}
+
+function distToSegment(px, py, w) {
+  const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 === 0 ? 0 : ((px - w.x1) * dx + (py - w.y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy));
+}
+
+function nearestWall(p, tol) {
+  let best = -1, bestD = tol;
+  for (let i = 0; i < walls.length; i++) {
+    const d = distToSegment(p.x, p.y, walls[i]);
+    if (d <= bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+function undo() {
+  if (!walls.length) return;
+  walls.pop();
+  hoverWall = -1;
+  refreshWalls();
+}
+function clearWalls() {
+  if (!walls.length) return;
+  walls.length = 0;
+  hoverWall = -1;
+  refreshWalls();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Eingabe (Pointer Events: Maus, Stift, Touch)
+ * ------------------------------------------------------------------ */
+function pointOf(e) {
+  const r = overlay.getBoundingClientRect();
+  const k = W / r.width;
+  const clamp = (v) => Math.max(1, Math.min(W - 1, v));
+  return { x: clamp((e.clientX - r.left) * k), y: clamp((e.clientY - r.top) * k), k };
+}
+
+overlay.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  if (drag) return;
+  e.preventDefault();
+  const p = pointOf(e);
+  if (tool === 'drop') {
+    dropQueue.push({ x: p.x, y: p.y, amp: AMP_CLICK, sigma: SIGMA_CLICK });
+  } else if (tool === 'draw') {
+    overlay.setPointerCapture(e.pointerId);
+    drag = { id: e.pointerId, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+    overlayDirty = true;
+  } else if (tool === 'erase') {
+    const tol = (e.pointerType === 'touch' ? 24 : 12) * p.k;
+    const i = nearestWall(p, tol);
+    if (i >= 0) {
+      walls.splice(i, 1);
+      hoverWall = -1;
+      refreshWalls();
+    }
+  }
+});
+
+overlay.addEventListener('pointermove', (e) => {
+  const p = pointOf(e);
+  if (drag && e.pointerId === drag.id) {
+    drag.x2 = p.x; drag.y2 = p.y;
+    overlayDirty = true;
+  } else if (tool === 'erase' && e.pointerType !== 'touch') {
+    const i = nearestWall(p, 12 * p.k);
+    if (i !== hoverWall) { hoverWall = i; overlayDirty = true; }
+  }
+});
+
+function endDrag(e, commit) {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (commit && Math.hypot(drag.x2 - drag.x1, drag.y2 - drag.y1) >= 2) {
+    walls.push({ x1: drag.x1, y1: drag.y1, x2: drag.x2, y2: drag.y2 });
+    refreshWalls();
+  }
+  drag = null;
+  overlayDirty = true;
+}
+overlay.addEventListener('pointerup', (e) => endDrag(e, true));
+overlay.addEventListener('pointercancel', (e) => endDrag(e, false));
+overlay.addEventListener('lostpointercapture', (e) => endDrag(e, false));
+overlay.addEventListener('pointerleave', () => {
+  if (hoverWall !== -1) { hoverWall = -1; overlayDirty = true; }
+});
+overlay.addEventListener('contextmenu', (e) => e.preventDefault());
+
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    undo();
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ *  Bedienelemente
+ * ------------------------------------------------------------------ */
+const HINTS = {
+  drop: 'Klicke oder tippe ins Becken, um einen Tropfen fallen zu lassen.',
+  draw: 'Ziehe eine Linie vom Start- zum Endpunkt, um eine Wand zu setzen.',
+  erase: 'Klicke oder tippe auf eine Wand, um sie zu entfernen.'
+};
+
+function setTool(t) {
+  tool = t;
+  drag = null;
+  hoverWall = -1;
+  overlay.className = 'tool-' + t;
+  $('hint').textContent = HINTS[t];
+  overlayDirty = true;
+}
+document.querySelectorAll('input[name=tool]').forEach((r) => {
+  r.addEventListener('change', () => { if (r.checked) setTool(r.value); });
+});
+document.querySelectorAll('input[name=view]').forEach((r) => {
+  r.addEventListener('change', () => { if (r.checked) viewMode = Number(r.value); });
+});
+$('undo').addEventListener('click', undo);
+$('clear').addEventListener('click', clearWalls);
+
+function readControls() {
+  const sp = Number($('speed').value);
+  params.nu = NU_MIN + (NU_MAX - NU_MIN) * sp / 100;
+  const pxPerSec = Math.round(params.nu * backend.stepsPerTick * (W / backend.N) * 60);
+  $('speedOut').textContent = pxPerSec + ' px/s';
+
+  const d = Number($('damp').value);
+  params.g = DAMP_MAX * (d / 100) * (d / 100);
+  $('dampOut').textContent = d === 0 ? 'keine' : d + ' %';
+
+  params.rainRate = Number($('rate').value);
+  $('rateOut').textContent = params.rainRate === 0 ? 'aus' : params.rainRate + ' pro Sekunde';
+
+  const ra = Number($('rainAmp').value);
+  params.rainAmp = ra / 100;
+  $('rainAmpOut').textContent = ra + ' %';
+}
+['speed', 'damp', 'rate', 'rainAmp'].forEach((id) => $(id).addEventListener('input', readControls));
+
+/* ------------------------------------------------------------------ *
+ *  Overlay zeichnen (Wände, Vorschau, Hervorhebung)
+ * ------------------------------------------------------------------ */
+function drawOverlay() {
+  octx.clearRect(0, 0, W, W);
+  octx.lineCap = 'round';
+  octx.lineJoin = 'round';
+  const seg = (x1, y1, x2, y2) => { octx.beginPath(); octx.moveTo(x1, y1); octx.lineTo(x2, y2); octx.stroke(); };
+  walls.forEach((w, i) => {
+    const hot = tool === 'erase' && i === hoverWall;
+    octx.strokeStyle = 'rgba(255,255,255,0.55)';
+    octx.lineWidth = hot ? 9 : 6;
+    seg(w.x1, w.y1, w.x2, w.y2);
+    octx.strokeStyle = hot ? '#d2541b' : '#1e2d34';
+    octx.lineWidth = hot ? 5 : 3;
+    seg(w.x1, w.y1, w.x2, w.y2);
+  });
+  if (drag) {
+    octx.setLineDash([10, 8]);
+    octx.strokeStyle = 'rgba(255,255,255,0.7)';
+    octx.lineWidth = 6;
+    seg(drag.x1, drag.y1, drag.x2, drag.y2);
+    octx.strokeStyle = '#0b7a83';
+    octx.lineWidth = 3;
+    seg(drag.x1, drag.y1, drag.x2, drag.y2);
+    octx.setLineDash([]);
+    octx.fillStyle = '#0b7a83';
+    [[drag.x1, drag.y1], [drag.x2, drag.y2]].forEach(([x, y]) => {
+      octx.beginPath(); octx.arc(x, y, 5, 0, Math.PI * 2); octx.fill();
+    });
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Simulationsschleife
+ * ------------------------------------------------------------------ */
+function poisson(lambda) {
+  const limit = Math.exp(-lambda);
+  let k = 0, p = 1;
+  do { k++; p *= Math.random(); } while (p > limit);
+  return k - 1;
+}
+
+function tick() {
+  // Klick-Tropfen
+  while (dropQueue.length) {
+    const d = dropQueue.shift();
+    if (!isWallAt(d.x, d.y)) backend.addDrop(d.x, d.y, d.amp, d.sigma);
+  }
+  // Dauerregen
+  if (params.rainRate > 0) {
+    const n = poisson(params.rainRate * TICK);
+    for (let i = 0; i < n; i++) {
+      const x = 12 + Math.random() * (W - 24);
+      const y = 12 + Math.random() * (W - 24);
+      if (isWallAt(x, y)) continue;
+      const amp = params.rainAmp * (0.7 + 0.6 * Math.random());
+      const sigma = SIGMA_RAIN * (0.8 + 0.5 * Math.random());
+      backend.addDrop(x, y, amp, sigma);
+    }
+  }
+  // Wellengleichung
+  backend.step(params.nu * params.nu, params.g, backend.stepsPerTick);
+}
+
+let last = performance.now();
+let acc = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  acc += dt;
+  let n = 0;
+  while (acc >= TICK && n < 2) { tick(); acc -= TICK; n++; }
+  if (acc > TICK) acc = TICK;
+  backend.render(viewMode);
+  if (overlayDirty) { drawOverlay(); overlayDirty = false; }
+}
+document.addEventListener('visibilitychange', () => { last = performance.now(); acc = 0; });
+
+/* ------------------------------------------------------------------ *
+ *  Start
+ * ------------------------------------------------------------------ */
+setTool('drop');
+readControls();
+refreshWalls();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
