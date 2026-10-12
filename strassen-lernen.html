@@ -26,6 +26,7 @@ input,select{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var
 .tile.new{align-items:center;border-style:dashed;color:var(--ac);font-weight:600}
 .bar{padding:8px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);border-bottom:1px solid var(--bd)}
 .map{flex:1;min-height:0}
+.tools{display:inline-flex;gap:4px}.tool svg{vertical-align:middle;margin-right:5px}
 #status{opacity:.85}#status.err{color:#d6336c;opacity:1}
 #lwrap{flex:1;min-height:0;display:flex}
 #lmap{flex:1;background:#eef0f3}
@@ -48,7 +49,7 @@ input,select{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var
 <section id="pick" hidden>
  <div class="bar">
   <label>Orientierung <select id="tiles-sel"></select></label>
-  <button id="drawBtn">▭ Rechteck zeichnen</button>
+  <span class="tools"><button class="tool" data-m="circle" title="Kreis: Mittelpunkt + Radius"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 12h9"/></svg>Kreis</button><button class="tool" data-m="rect" title="Rechteck: zwei gegenüberliegende Ecken"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12"/><circle cx="3" cy="6" r="1.8" fill="currentColor" stroke="none"/><circle cx="21" cy="18" r="1.8" fill="currentColor" stroke="none"/></svg>Rechteck</button><button class="tool" data-m="rrect" title="Gedrehtes Rechteck: Seite (2 Punkte) + Höhe (3. Punkt)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 14 L13 4 L21 12 L11 22 Z"/><circle cx="3" cy="14" r="1.8" fill="currentColor" stroke="none"/><circle cx="13" cy="4" r="1.8" fill="currentColor" stroke="none"/></svg>Gedreht</button><button class="tool" data-m="poly" title="Polygon: beliebig viele Punkte"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 19 L3 9 L12 3 L21 8 L18 20 Z"/></svg>Polygon</button><button id="undo" title="Letzten Punkt zurücknehmen (ESC / Rechtsklick)">↶</button></span>
   <label>Max. Straßen <input id="max" type="number" min="1" value="100" style="width:75px"></label>
   <label>Name <input id="name" placeholder="Name des Ausschnitts"></label>
   <label><input type="checkbox" id="offl" checked> Hintergrund (Wasser, Grün, Wege) mitspeichern</label>
@@ -118,21 +119,25 @@ function geom(f,ext,z,X,Y){
   const ring=r.map(ll);if(a>0||!polys.length)polys.push([ring]);else polys[polys.length-1].push(ring)});
  return polys;
 }
-/* Clipping auf Rechteck bb=[w,s,e,n]; Punkte sind [lat,lon] */
-function clipLine(P,bb){
- const out=[];let cur=[];
+/* Linie auf beliebiges Polygon (ring=[[lat,lon],...]) zuschneiden */
+function inPoly(p,R){let c=false;for(let i=0,j=R.length-1;i<R.length;j=i++){
+ if((R[i][1]>p[1])!==(R[j][1]>p[1])&&p[0]<(R[j][0]-R[i][0])*(p[1]-R[i][1])/(R[j][1]-R[i][1])+R[i][0])c=!c}return c}
+function clipLine(P,R){
+ const out=[];let cur=[];const flush=()=>{if(cur.length>1)out.push(cur);cur=[]};
  for(let i=1;i<P.length;i++){
-  const[y0,x0]=P[i-1],[y1,x1]=P[i],dx=x1-x0,dy=y1-y0,pr=[-dx,dx,-dy,dy],q=[x0-bb[0],bb[2]-x0,y0-bb[1],bb[3]-y0];
-  let t0=0,t1=1,ok=true;
-  for(let k=0;k<4&&ok;k++){
-   if(pr[k]===0){if(q[k]<0)ok=false}
-   else{const t=q[k]/pr[k];if(pr[k]<0){if(t>t1)ok=false;else if(t>t0)t0=t}else{if(t<t0)ok=false;else if(t<t1)t1=t}}}
-  if(!ok){if(cur.length>1)out.push(cur);cur=[];continue}
-  if(!cur.length)cur.push([y0+t0*dy,x0+t0*dx]);
-  cur.push([y0+t1*dy,x0+t1*dx]);
-  if(t1<1){out.push(cur);cur=[]}
+  const a=P[i-1],b=P[i],dy=b[0]-a[0],dx=b[1]-a[1],ts=[0,1];
+  for(let k=0;k<R.length;k++){const c=R[k],d=R[(k+1)%R.length],ey=d[0]-c[0],ex=d[1]-c[1],den=dx*ey-dy*ex;
+   if(Math.abs(den)<1e-15)continue;
+   const t=((c[1]-a[1])*ey-(c[0]-a[0])*ex)/den,u=((c[1]-a[1])*dy-(c[0]-a[0])*dx)/den;
+   if(t>0&&t<1&&u>=0&&u<=1)ts.push(t)}
+  ts.sort((x,y)=>x-y);
+  for(let k=1;k<ts.length;k++){const t0=ts[k-1],t1=ts[k];if(t1-t0<1e-12)continue;
+   const tm=(t0+t1)/2;
+   if(!inPoly([a[0]+tm*dy,a[1]+tm*dx],R)){flush();continue}
+   const s0=[a[0]+t0*dy,a[1]+t0*dx],e0=[a[0]+t1*dy,a[1]+t1*dx],l=cur[cur.length-1];
+   if(l&&Math.abs(l[0]-s0[0])<1e-9&&Math.abs(l[1]-s0[1])<1e-9)cur.push(e0);else{flush();cur=[s0,e0]}}
  }
- if(cur.length>1)out.push(cur);
+ flush();
  return out.map(l=>l.map(p=>[+p[0].toFixed(5),+p[1].toFixed(5)]));
 }
 function clipPoly(P,[w,s,e,n]){
@@ -149,9 +154,9 @@ function clipPoly(P,[w,s,e,n]){
 let tileUrl=null;
 const STREET=new Set(['motorway','trunk','primary','secondary','tertiary','minor']);
 const ROAD=new Set([...STREET,'service','track','path','pedestrian']);
-async function loadData(b,onProg){
+async function loadData(shape,onProg){
  if(!tileUrl)tileUrl=(await(await fetch('https://tiles.openfreemap.org/planet')).json()).tiles[0];
- const Z=14,N=2**Z,bb=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()];
+ const Z=14,N=2**Z,bb=shape.bb,ring=shape.ring;
  const lx=lon=>Math.floor((lon+180)/360*N),ly=lat=>{const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*N)};
  const x0=lx(bb[0]),x1=lx(bb[2]),y0=ly(bb[3]),y1=ly(bb[1]),cnt=(x1-x0+1)*(y1-y0+1);
  if(cnt>30)throw new Error(`Rechteck zu groß (${cnt} Kartenkacheln, max. 30)`);
@@ -164,8 +169,8 @@ async function loadData(b,onProg){
   const each=(name,fn)=>{const l=T[name];if(!l)return;l.feats.forEach(f=>{const p={};
    for(let i=0;i<f.tags.length;i+=2)p[l.keys[f.tags[i]]]=l.values[f.tags[i+1]].v;fn(p,geom(f,l.extent,Z,X,Y),f.type)})};
   each('transportation_name',(p,G,t)=>{if(t!==2||!p.name||!STREET.has(p.class))return;
-   G.forEach(line=>clipLine(line,bb).forEach(c=>R.ways.push({i:nid++,name:p.name,p:c})))});
-  each('transportation',(p,G,t)=>{if(t===2&&ROAD.has(p.class))G.forEach(line=>clipLine(line,bb).forEach(c=>R.bg.roads.push(c)))});
+   G.forEach(line=>clipLine(line,ring).forEach(c=>R.ways.push({i:nid++,name:p.name,p:c})))});
+  each('transportation',(p,G,t)=>{if(t===2&&ROAD.has(p.class))G.forEach(line=>clipLine(line,ring).forEach(c=>R.bg.roads.push(c)))});
   for(const k of['water','park'])each(k,(p,G,t)=>t===3&&G.forEach(poly=>{const rs=poly.map(r=>clipPoly(r,bb)).filter(Boolean);if(rs.length)R.bg[k].push(rs)}));
   each('place',(p,G,t)=>{if(t===1&&p.name&&G[0])R.places.push({n:p.name,c:p.class,p:G[0]})});
   onProg(++done,cnt)}};
@@ -174,8 +179,47 @@ async function loadData(b,onProg){
 }
 
 /* ---------- Ausschnitt wählen ---------- */
-let pmap,wayLayer,rect,cur=null,drawing=false,start=null,loadId=0;
+let pmap,wayLayer,selLayer,drawLayer,cur=null,mode=null,pts=[],mouse=null,loadId=0;
+const NEED={circle:2,rect:2,rrect:3,poly:1e9};
+const HINT={circle:'Kreis: Mittelpunkt setzen, dann einen Punkt auf dem Rand.',
+ rect:'Rechteck: zwei gegenüberliegende Ecken setzen.',
+ rrect:'Gedrehtes Rechteck: zwei Punkte für eine Seite, der dritte bestimmt die Höhe.',
+ poly:'Polygon: beliebig viele Punkte; Klick nahe am ersten Punkt (oder Enter) schließt es.'};
 function status(t,err){const s=$('#status');s.textContent=t;s.className=err?'err':''}
+const KY=110574,KX=lat=>111320*Math.cos(lat*Math.PI/180);
+function ringOf(m,P){
+ const a=P[0],b=P[1];
+ if(m==='poly')return P.map(p=>[p.lat,p.lng]);
+ if(m==='rect'){const s=Math.min(a.lat,b.lat),n=Math.max(a.lat,b.lat),w=Math.min(a.lng,b.lng),e=Math.max(a.lng,b.lng);return[[s,w],[s,e],[n,e],[n,w]]}
+ const k=KX(a.lat),M=p=>[(p.lng-a.lng)*k,(p.lat-a.lat)*KY],U=([x,y])=>[a.lat+y/KY,a.lng+x/k],[bx,by]=M(b);
+ if(m==='circle'){const r=Math.hypot(bx,by);return Array.from({length:72},(_,i)=>{const t=i/72*2*Math.PI;return U([r*Math.cos(t),r*Math.sin(t)])})}
+ const[cx,cy]=M(P[2]),l=Math.hypot(bx,by)||1,nx=-by/l,ny=bx/l,h=cx*nx+cy*ny;
+ return[[0,0],[bx,by],[bx+nx*h,by+ny*h],[nx*h,ny*h]].map(U);
+}
+function redraw(){
+ drawLayer.clearLayers();if(!mode)return;
+ const P=pts.length<NEED[mode]&&mouse?[...pts,mouse]:pts;if(!P.length)return;
+ const st={color:'#e8590c',weight:2,dashArray:'5 5'};
+ if(P.length>=(mode==='poly'?3:NEED[mode]))L.polygon(ringOf(mode,P),{...st,fillOpacity:.08,interactive:false}).addTo(drawLayer);
+ else L.polyline(P,{...st,interactive:false}).addTo(drawLayer);
+ pts.forEach((q,i)=>L.circleMarker(q,{radius:i===0&&mode==='poly'?8:5,color:'#e8590c',fillColor:'#fff',fillOpacity:1,weight:2,interactive:false}).addTo(drawLayer));
+}
+function setMode(m){
+ mode=m;pts=[];mouse=null;
+ document.querySelectorAll('.tool').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+ pmap.getContainer().style.cursor=m?'crosshair':'';drawLayer.clearLayers();
+ if(m){selLayer.clearLayers();wayLayer.clearLayers();cur=null;$('#save').disabled=true;status(HINT[m]+' ESC/Rechtsklick: zurück.')}
+ else if(!cur)status('Wähle ein Werkzeug, um einen Bereich auf der Karte festzulegen.');
+}
+function undo(){
+ if(!mode)return;
+ if(pts.length){pts.pop();redraw();status(HINT[mode]+' ESC/Rechtsklick: zurück.')}else setMode(null);
+}
+function finish(){
+ const ring=ringOf(mode,pts).map(p=>[+p[0].toFixed(5),+p[1].toFixed(5)]);
+ selLayer.clearLayers();L.polygon(ring,{color:'#e8590c',weight:2,fillOpacity:.08,interactive:false}).addTo(selLayer);
+ setMode(null);fetchStreets(ring);
+}
 function pick(){
  show('pick');
  if(!pmap){
@@ -187,30 +231,32 @@ function pick(){
    'Keine Hintergrundkarte':null};
   const sel=$('#tiles-sel');let tl=null;
   Object.keys(T).forEach(k=>sel.add(new Option(k,k)));
-  sel.value=LS.get('sl:tiles','OpenStreetMap DE');if(!T[sel.value]&&sel.value!=='Keine Hintergrundkarte')sel.value='OpenStreetMap DE';
+  sel.value=LS.get('sl:tiles','OpenStreetMap DE');if(!(sel.value in T))sel.value='OpenStreetMap DE';
   const setT=()=>{tl&&tl.remove();tl=null;LS.set('sl:tiles',sel.value);const t=T[sel.value];
    if(t)tl=L.tileLayer(t[0],{...t[1],attribution:'© OpenStreetMap-Mitwirkende'}).addTo(pmap)};
   sel.onchange=setT;setT();
-  wayLayer=L.layerGroup().addTo(pmap);
+  wayLayer=L.layerGroup().addTo(pmap);selLayer=L.layerGroup().addTo(pmap);drawLayer=L.layerGroup().addTo(pmap);
   navigator.geolocation&&navigator.geolocation.getCurrentPosition(p=>pmap.setView([p.coords.latitude,p.coords.longitude],14),()=>{},{timeout:6000});
-  const c=pmap.getContainer();
-  c.addEventListener('pointerdown',e=>{
-   if(!drawing||e.target.closest('.leaflet-control'))return;
-   e.preventDefault();e.stopPropagation();c.setPointerCapture(e.pointerId);
-   start=pmap.mouseEventToLatLng(e);rect&&rect.remove();wayLayer.clearLayers();cur=null;upd();
-   rect=L.rectangle([start,start],{color:'#e8590c',weight:2,fillOpacity:.08}).addTo(pmap)},true);
-  c.addEventListener('pointermove',e=>{if(start)rect.setBounds(L.latLngBounds(start,pmap.mouseEventToLatLng(e)))});
-  c.addEventListener('pointerup',e=>{if(!start)return;start=null;setDraw(false);
-   const b=rect.getBounds();
-   if(Math.abs(b.getNorth()-b.getSouth())<1e-5){rect.remove();rect=null;return}
-   fetchStreets(b)});
+  pmap.on('click',e=>{
+   if(!mode)return;
+   const last=pts[pts.length-1];
+   if(last&&pmap.distance(last,e.latlng)<1)return;
+   if(mode==='poly'&&pts.length&&pmap.latLngToContainerPoint(e.latlng).distanceTo(pmap.latLngToContainerPoint(pts[0]))<14){
+    if(pts.length>=3)finish();return}
+   pts.push(e.latlng);
+   if(pts.length>=NEED[mode])finish();else redraw()});
+  pmap.on('mousemove',e=>{if(mode){mouse=e.latlng;redraw()}});
+  pmap.on('mouseout',()=>{mouse=null;redraw()});
+  pmap.on('contextmenu',e=>{e.originalEvent.preventDefault();undo()});
+  document.addEventListener('keydown',e=>{
+   if($('#pick').hidden||!mode)return;
+   if(e.key==='Escape')undo();
+   else if(e.key==='Enter'&&mode==='poly'&&pts.length>=3)finish()});
+  document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>setMode(mode===b.dataset.m?null:b.dataset.m));
+  $('#undo').onclick=undo;
  }
  setTimeout(()=>pmap.invalidateSize(),50);
 }
-function setDraw(on){drawing=on;$('#drawBtn').classList.toggle('on',on);
- on?pmap.dragging.disable():pmap.dragging.enable();
- pmap.getContainer().style.cursor=on?'crosshair':'';pmap.getContainer().style.touchAction=on?'none':''}
-$('#drawBtn').onclick=()=>setDraw(!drawing);
 function upd(){
  const max=+$('#max').value||0;
  if(!cur){$('#save').disabled=true;return}
@@ -220,31 +266,31 @@ function upd(){
  else{status(`${n} Straßen im Bereich ✓`);$('#save').disabled=false}
 }
 $('#max').oninput=upd;
-async function fetchStreets(b){
- const my=++loadId;status('Lade Kartendaten …');
+async function fetchStreets(ring){
+ const my=++loadId,b=L.latLngBounds(ring);status('Lade Kartendaten …');
  try{
-  const R=await loadData(b,(d,n)=>my===loadId&&status(`Lade Kartendaten … ${d}/${n}`));
-  if(my!==loadId)return;
+  const R=await loadData({ring,bb:[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()]},(d,n)=>my===loadId&&status(`Lade Kartendaten … ${d}/${n}`));
+  if(my!==loadId||mode)return;
   const c=b.getCenter(),dist=p=>(p[0]-c.lat)**2+(p[1]-c.lng)**2;
   let nm='';
   for(const cls of[['neighbourhood','quarter'],['suburb'],['city_district'],['city','town','village']]){
    const pl=R.places.filter(x=>cls.includes(x.c)).sort((a,z)=>dist(a.p)-dist(z.p))[0];if(pl){nm=pl.n;break}}
   $('#name').value=nm||'Mein Ausschnitt';
-  cur={ways:R.ways,bg:R.bg,b,names:new Set(R.ways.map(w=>w.name)).size};
+  cur={ways:R.ways,bg:R.bg,b,ring,names:new Set(R.ways.map(w=>w.name)).size};
   R.ways.forEach(w=>L.polyline(w.p,{color:'#d6336c',weight:4}).addTo(wayLayer));
   upd();
  }catch(e){status('Fehler beim Laden: '+e.message,true)}
 }
 $('#save').onclick=async()=>{
- if(!cur)return;const id=Date.now().toString(36),names={},ids={};
+ if(!cur)return;const id=Date.now().toString(36),names={};
  cur.ways.forEach(w=>names[w.i]=w.name);
- const geo={bounds:[[cur.b.getSouth(),cur.b.getWest()],[cur.b.getNorth(),cur.b.getEast()]],ways:cur.ways.map(w=>({i:w.i,p:w.p}))};
+ const geo={shape:cur.ring,bounds:[[cur.b.getSouth(),cur.b.getWest()],[cur.b.getNorth(),cur.b.getEast()]],ways:cur.ways.map(w=>({i:w.i,p:w.p}))};
  if(!LS.set('sl:map:'+id,geo))return;
  if(!LS.set('sl:names:'+id,names)){localStorage.removeItem('sl:map:'+id);return}
  const entry={id,name:$('#name').value.trim()||'Mein Ausschnitt',count:cur.names};
  if($('#offl').checked){try{await bgPut(id,cur.bg);entry.bg=1}catch(e){alert('Hintergrund konnte nicht gespeichert werden: '+e.message)}}
  LS.set('sl:index',[...getIndex(),entry]);
- wayLayer.clearLayers();rect&&rect.remove();rect=null;cur=null;home();
+ wayLayer.clearLayers();selLayer.clearLayers();cur=null;home();
 };
 
 /* ---------- Lernen ---------- */
@@ -257,6 +303,7 @@ async function learn(id){
  show('learn');$('#title').textContent='📍 '+m.name;
  if(!lmap){lmap=L.map('lmap',{zoomSnap:.25,attributionControl:false});lLayer=L.layerGroup().addTo(lmap)}
  lLayer.clearLayers();groups={};hl=null;
+ if(geo.shape)L.polygon(geo.shape,{interactive:false,fill:false,color:'#8a93a3',weight:2,dashArray:'6 6'}).addTo(lLayer);
  if(bg){const o={interactive:false,weight:0,fillOpacity:1};
   bg.water.forEach(p=>L.polygon(p,{...o,fillColor:'#b9d3ee'}).addTo(lLayer));
   bg.park.forEach(p=>L.polygon(p,{...o,fillColor:'#cfe5c4'}).addTo(lLayer));
