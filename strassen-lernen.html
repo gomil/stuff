@@ -52,7 +52,7 @@ input,select{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var
   <span class="tools"><button class="tool" data-m="circle" title="Kreis: Mittelpunkt + Radius"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 12h9"/></svg>Kreis</button><button class="tool" data-m="rect" title="Rechteck: zwei gegenüberliegende Ecken"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12"/><circle cx="3" cy="6" r="1.8" fill="currentColor" stroke="none"/><circle cx="21" cy="18" r="1.8" fill="currentColor" stroke="none"/></svg>Rechteck</button><button class="tool" data-m="rrect" title="Gedrehtes Rechteck: Seite (2 Punkte) + Höhe (3. Punkt)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 14 L13 4 L21 12 L11 22 Z"/><circle cx="3" cy="14" r="1.8" fill="currentColor" stroke="none"/><circle cx="13" cy="4" r="1.8" fill="currentColor" stroke="none"/></svg>Gedreht</button><button class="tool" data-m="poly" title="Polygon: beliebig viele Punkte"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 19 L3 9 L12 3 L21 8 L18 20 Z"/></svg>Polygon</button><button id="undo" title="Letzten Punkt zurücknehmen (ESC / Rechtsklick)">↶</button></span>
   <label>Max. Straßen <input id="max" type="number" min="1" value="100" style="width:75px"></label>
   <label>Name <input id="name" placeholder="Name des Ausschnitts"></label>
-  <label><input type="checkbox" id="offl" checked> Hintergrund (Wasser, Grün, Wege) mitspeichern</label>
+  <label><input type="checkbox" id="offl" checked> Hintergrund (Gewässer, Grün, Flächen, Bahn, Wege) mitspeichern</label>
   <button id="save" class="p" disabled>💾 Speichern</button>
   <span id="status">Zoome zum Bereich und zeichne ein Rechteck (Maus/Finger ziehen).</span>
  </div>
@@ -156,12 +156,12 @@ const STREET=new Set(['motorway','trunk','primary','secondary','tertiary','minor
 const ROAD=new Set([...STREET,'service','track','path','pedestrian']);
 async function loadData(shape,onProg){
  if(!tileUrl)tileUrl=(await(await fetch('https://tiles.openfreemap.org/planet')).json()).tiles[0];
- const Z=14,N=2**Z,bb=shape.bb,ring=shape.ring;
+ const Z=14,N=2**Z,bb=shape.bb,ring=shape.ring,box=[[bb[1],bb[0]],[bb[1],bb[2]],[bb[3],bb[2]],[bb[3],bb[0]]];
  const lx=lon=>Math.floor((lon+180)/360*N),ly=lat=>{const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*N)};
  const x0=lx(bb[0]),x1=lx(bb[2]),y0=ly(bb[3]),y1=ly(bb[1]),cnt=(x1-x0+1)*(y1-y0+1);
  if(cnt>30)throw new Error(`Rechteck zu groß (${cnt} Kartenkacheln, max. 30)`);
  const jobs=[];for(let X=x0;X<=x1;X++)for(let Y=y0;Y<=y1;Y++)jobs.push([X,Y]);
- const R={ways:[],bg:{roads:[],water:[],park:[]},places:[]};let done=0,nid=1;
+ const R={ways:[],bg:{roads:[],water:[],park:[],landuse:[],landcover:[],waterway:[],rail:[],aeroPoly:[],aeroLine:[]},places:[]};let done=0,nid=1;
  const run=async()=>{while(jobs.length){const[X,Y]=jobs.pop();
   const r=await fetch(tileUrl.replace('{z}',Z).replace('{x}',X).replace('{y}',Y));
   if(!r.ok)throw new Error('Kachel HTTP '+r.status);
@@ -170,7 +170,14 @@ async function loadData(shape,onProg){
    for(let i=0;i<f.tags.length;i+=2)p[l.keys[f.tags[i]]]=l.values[f.tags[i+1]].v;fn(p,geom(f,l.extent,Z,X,Y),f.type)})};
   each('transportation_name',(p,G,t)=>{if(t!==2||!p.name||!STREET.has(p.class))return;
    G.forEach(line=>clipLine(line,ring).forEach(c=>R.ways.push({i:nid++,name:p.name,p:c})))});
-  each('transportation',(p,G,t)=>{if(t===2&&ROAD.has(p.class))G.forEach(line=>clipLine(line,ring).forEach(c=>R.bg.roads.push(c)))});
+  each('transportation',(p,G,t)=>{if(t!==2)return;
+   if(ROAD.has(p.class))G.forEach(l=>clipLine(l,box).forEach(c=>R.bg.roads.push(c)));
+   else if(p.class==='rail'||p.class==='transit')G.forEach(l=>clipLine(l,box).forEach(c=>R.bg.rail.push({c:p.class,p:c})))});
+  each('waterway',(p,G,t)=>{if(t===2)G.forEach(l=>clipLine(l,box).forEach(c=>R.bg.waterway.push({c:p.class,p:c})))});
+  const polys=(poly,c,to)=>{const rs=poly.map(q=>clipPoly(q,bb)).filter(Boolean);if(rs.length)to.push({c,p:rs})};
+  each('aeroway',(p,G,t)=>{if(t===2)G.forEach(l=>clipLine(l,box).forEach(c=>R.bg.aeroLine.push({c:p.class,p:c})));
+   else if(t===3)G.forEach(poly=>polys(poly,p.class,R.bg.aeroPoly))});
+  for(const k of['landuse','landcover'])each(k,(p,G,t)=>t===3&&G.forEach(poly=>polys(poly,p.class,R.bg[k])));
   for(const k of['water','park'])each(k,(p,G,t)=>t===3&&G.forEach(poly=>{const rs=poly.map(r=>clipPoly(r,bb)).filter(Boolean);if(rs.length)R.bg[k].push(rs)}));
   each('place',(p,G,t)=>{if(t===1&&p.name&&G[0])R.places.push({n:p.name,c:p.class,p:G[0]})});
   onProg(++done,cnt)}};
@@ -199,10 +206,10 @@ function ringOf(m,P){
 function redraw(){
  drawLayer.clearLayers();if(!mode)return;
  const P=pts.length<NEED[mode]&&mouse?[...pts,mouse]:pts;if(!P.length)return;
- const st={color:'#e8590c',weight:2,dashArray:'5 5'};
+ const st={color:'#e03131',weight:1.5,dashArray:'6 5'};
  if(P.length>=(mode==='poly'?3:NEED[mode]))L.polygon(ringOf(mode,P),{...st,fillOpacity:.08,interactive:false}).addTo(drawLayer);
  else L.polyline(P,{...st,interactive:false}).addTo(drawLayer);
- pts.forEach((q,i)=>L.circleMarker(q,{radius:i===0&&mode==='poly'?8:5,color:'#e8590c',fillColor:'#fff',fillOpacity:1,weight:2,interactive:false}).addTo(drawLayer));
+ pts.forEach((q,i)=>L.circleMarker(q,{radius:i===0&&mode==='poly'?8:5,color:'#e03131',fillColor:'#fff',fillOpacity:1,weight:1.5,interactive:false}).addTo(drawLayer));
 }
 function setMode(m){
  mode=m;pts=[];mouse=null;
@@ -217,7 +224,7 @@ function undo(){
 }
 function finish(){
  const ring=ringOf(mode,pts).map(p=>[+p[0].toFixed(5),+p[1].toFixed(5)]);
- selLayer.clearLayers();L.polygon(ring,{color:'#e8590c',weight:2,fillOpacity:.08,interactive:false}).addTo(selLayer);
+ selLayer.clearLayers();L.polygon(ring,{color:'#e03131',weight:1.5,dashArray:'6 5',fillOpacity:.04,interactive:false}).addTo(selLayer);
  setMode(null);fetchStreets(ring);
 }
 function pick(){
@@ -294,6 +301,10 @@ $('#save').onclick=async()=>{
 };
 
 /* ---------- Lernen ---------- */
+const LU={residential:'#e3e6eb',suburb:'#e3e6eb',neighbourhood:'#e3e6eb',quarter:'#e3e6eb',commercial:'#f1e0db',retail:'#f1e0db',
+ industrial:'#e2dfeb',cemetery:'#cfe0cc',school:'#f0ead2',university:'#f0ead2',college:'#f0ead2',kindergarten:'#f0ead2',hospital:'#f2d9d9',
+ pitch:'#d3ebcd',playground:'#d3ebcd',stadium:'#d3ebcd',track:'#d3ebcd',railway:'#e0e1e6',x:'#e7e9ee'};
+const LC={grass:'#d3e9c6',wood:'#bcdcaa',farmland:'#e7ecc9',sand:'#f1e8c8',wetland:'#cfe7df',rock:'#dedede',x:'#d8e8cc'};
 let lmap,lLayer,groups={},drag=null,hl=null;
 const BASE={color:'#3b6fd4',weight:4},OK={color:'#1a9c3c',weight:6},HI={color:'#f59f00',weight:9},BAD={color:'#e03131',weight:8};
 async function learn(id){
@@ -303,11 +314,18 @@ async function learn(id){
  show('learn');$('#title').textContent='📍 '+m.name;
  if(!lmap){lmap=L.map('lmap',{zoomSnap:.25,attributionControl:false});lLayer=L.layerGroup().addTo(lmap)}
  lLayer.clearLayers();groups={};hl=null;
- if(geo.shape)L.polygon(geo.shape,{interactive:false,fill:false,color:'#8a93a3',weight:2,dashArray:'6 6'}).addTo(lLayer);
- if(bg){const o={interactive:false,weight:0,fillOpacity:1};
-  bg.water.forEach(p=>L.polygon(p,{...o,fillColor:'#b9d3ee'}).addTo(lLayer));
-  bg.park.forEach(p=>L.polygon(p,{...o,fillColor:'#cfe5c4'}).addTo(lLayer));
-  bg.roads.forEach(l=>L.polyline(l,{interactive:false,color:'#c3c8d0',weight:1.5}).addTo(lLayer))}
+ if(bg){const o={interactive:false,weight:0,fillOpacity:1},poly=(a,col)=>L.polygon(a,{...o,fillColor:col}).addTo(lLayer),
+   line=(a,st)=>L.polyline(a,{interactive:false,...st}).addTo(lLayer);
+  (bg.landuse||[]).forEach(f=>poly(f.p,LU[f.c]||LU.x));
+  (bg.landcover||[]).forEach(f=>poly(f.p,LC[f.c]||LC.x));
+  bg.park.forEach(q=>poly(q,'#cfe5c4'));
+  (bg.aeroPoly||[]).forEach(f=>poly(f.p,'#dcdce8'));
+  bg.water.forEach(q=>poly(q,'#b9d3ee'));
+  (bg.waterway||[]).forEach(f=>line(f.p,{color:'#a9c9ec',weight:f.c==='river'||f.c==='canal'?3:1.5}));
+  (bg.aeroLine||[]).forEach(f=>line(f.p,{color:'#cfcfdc',weight:f.c==='runway'?7:3}));
+  bg.roads.forEach(l=>line(l,{color:'#c3c8d0',weight:1.5}));
+  (bg.rail||[]).forEach(f=>line(f.p,{color:'#8d94a1',weight:f.c==='rail'?2:1.5,dashArray:'7 5'}))}
+ if(geo.shape)L.polygon(geo.shape,{interactive:false,fill:false,color:'#e03131',weight:1.5,dashArray:'6 5'}).addTo(lLayer);
  geo.ways.forEach(w=>{const n=names[w.i];if(!n)return;
   const g=groups[n]||(groups[n]={layers:[],solved:false});
   g.layers.push(L.polyline(w.p,BASE).addTo(lLayer))});
